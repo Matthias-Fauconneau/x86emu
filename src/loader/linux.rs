@@ -1,10 +1,10 @@
 use std::fs::File;
 use std::io::Read;
 
-use machine_state::MachineState;
-use decoder::Decoder;
-use utils::convert_i32_to_u8vec;
-use cpu::emu_instructions::EmulationCPU;
+use crate::machine_state::MachineState;
+use crate::decoder::Decoder;
+use crate::utils::convert_i32_to_u8vec;
+use crate::cpu::emu_instructions::EmulationCPU;
 
 const SETUP_HEADER_OFFSET: u64 = 0x1F1;
 const BIT64_OFFSET: u64 = 0x200;
@@ -52,5 +52,5 @@ pub fn linux(filename: &str, print_instructions: bool, print_registers: bool) {
     // start execution
     let mut cpu = EmulationCPU {};
     let mut decoder = Decoder::new(&mut cpu, &mut machine_state);
-    decoder.execute(false);
+    decoder.execute();
 }

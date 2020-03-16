@@ -1,12 +1,9 @@
 use std::process;
 use std::u64;
-
-use extprim::u128::u128;
-
-use instruction_set::{InstructionArgument, InstructionArguments, Register, Flags};
-use machine_state::{MachineState};
-use instruction_set::{ArgumentSize, get_register_size};
-use utils::{convert_i32_to_u8vec, convert_i64_to_u8vec};
+use crate::instruction_set::{InstructionArgument, InstructionArguments, Register, Flags};
+use crate::machine_state::{MachineState};
+use crate::instruction_set::{ArgumentSize, get_register_size};
+use crate::utils::{convert_i32_to_u8vec, convert_i64_to_u8vec};
 
 pub struct EmulationCPU;
 
@@ -725,7 +722,7 @@ impl EmulationCPU {
         machine_state.print_instr_arg("div", &arg);
         let argument_size = arg.size();
         let divisor = arg.get_one_argument();
-        let divisor = u128::new(machine_state.get_value(&divisor, argument_size) as u64);
+        let divisor = machine_state.get_value(&divisor, argument_size);
 
         let (reg_lower, reg_upper) = match argument_size {
             ArgumentSize::Bit8 => (Register::AL, Register::AH),
@@ -734,17 +731,14 @@ impl EmulationCPU {
             ArgumentSize::Bit64 => (Register::RAX, Register::RDX),
         };
 
-        let dividend = u128::from_parts(machine_state.get_register_value(&reg_upper) as u64,
-                                        machine_state.get_register_value(&reg_lower) as u64);
+        let dividend = ((machine_state.get_register_value(&reg_upper) as u128) << 64) | (machine_state.get_register_value(&reg_lower) as u128);
+        let quotient = dividend / (divisor as u128);
+        if quotient > (u64::MAX as u128) { panic!("floating point error"); }
 
-        let quotient = dividend / divisor;
-        if quotient > u128::new(u64::MAX) {
-            panic!("floating point error");
-        }
-        let reminder = dividend % divisor;
+        let reminder = dividend % (divisor as u128);
 
-        machine_state.set_register_value(&reg_lower, quotient.low64() as i64);
-        machine_state.set_register_value(&reg_upper, reminder.low64() as i64);
+        machine_state.set_register_value(&reg_lower, quotient as i64);
+        machine_state.set_register_value(&reg_upper, reminder as i64);
 
         // todo: set flags (including floating point error flags)
     }

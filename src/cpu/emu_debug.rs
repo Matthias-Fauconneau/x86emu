@@ -1,5 +1,5 @@
-use machine_state::MachineState;
-use instruction_set::{InstructionArguments, ArgumentSize};
+use crate::machine_state::MachineState;
+use crate::instruction_set::{InstructionArguments, ArgumentSize};
 
 impl MachineState {
     pub fn print_instr(&self, instruction: &str) {

@@ -1,6 +1,6 @@
-use machine_state::load_machine_state;
-use cpu::emu_instructions::EmulationCPU;
-use decoder::Decoder;
+use crate::machine_state::load_machine_state;
+use crate::cpu::emu_instructions::EmulationCPU;
+use crate::decoder::Decoder;
 
 pub fn dump(filename: &str, print_instructions: bool, print_registers: bool) {
     let mut cpu = EmulationCPU {};

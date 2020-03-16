@@ -1,8 +1,1 @@
-target
-a.out
-*.o
-vmlinuz
-tmp/
-linux/
-*.bin
-test/qemu/test
+Cargo.lock

@@ -1,56 +1,18 @@
-extern crate clap;
-use clap::{App, Arg};
-
-extern crate x86emu;
-use x86emu::loader::elf::elf;
-use x86emu::loader::linux::linux;
-use x86emu::loader::dump::dump;
-
 fn main() {
-    let matches = App::new("x86emu")
-        .arg(Arg::with_name("file").required(true))
-        .arg(Arg::with_name("symbol")
-            .help("symbol to execute in elf file")
-            .long("symbol")
-            .short("s")
-            .takes_value(true))
-        .arg(Arg::with_name("loader")
-            .help("binary loader type")
-            .long("loader")
-            .short("l")
-            .takes_value(true)
-            .possible_values(&["linux", "elf", "dump"]))
-        .arg(Arg::with_name("debug")
+    /*let matches = clap::App::new("x86emu")
+        .arg(clap::Arg::with_name("file").required(true))
+        .arg(clap::Arg::with_name("debug")
             .help("run in debug mode (print all registers after every instruction)")
             .long("debug")
             .short("d"))
-        .arg(Arg::with_name("benchmark")
-            .help("print how long it took to execute the main loop")
-            .long("benchmark")
-            .short("b"))
-        .arg(Arg::with_name("print-instructions")
+        .arg(clap::Arg::with_name("print-instructions")
             .help("print every executed instruction")
             .long("print-instructions")
             .short("p"))
         .get_matches();
-
-    let symbol = matches.value_of("symbol").unwrap_or("main");
-    let loader = matches.value_of("loader").unwrap_or("elf");
     let filename = matches.value_of("file").unwrap();
     let debug = matches.is_present("debug");
-    let benchmark = matches.is_present("benchmark");
     let print_instructions = matches.is_present("print-instructions");
-
-    match loader {
-        "linux" => {
-            linux(filename, print_instructions, debug);
-        }
-        "elf" => {
-            elf(filename, symbol, print_instructions, debug, benchmark);
-        }
-        "dump" => {
-            dump(filename, print_instructions, debug);
-        }
-        _ => unreachable!("Values already validated by clap"),
-    }
+    x86emu::loader::pe::execute(filename, print_instructions, debug);*/
+    x86emu::loader::pe::execute(&std::env::args().next().unwrap(), false, false);
 }

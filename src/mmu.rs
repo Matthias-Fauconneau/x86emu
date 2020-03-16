@@ -1,5 +1,5 @@
 use std::collections::hash_map::{Entry};
-use machine_state::MachineState;
+use crate::machine_state::MachineState;
 
 use zero;
 
