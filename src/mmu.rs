@@ -42,12 +42,13 @@ impl MachineState {
     }
 
     // FIXME: fast path for fixed length (e.g 1 byte)
-    pub fn mem_read(&mut self, address: u64, length: u64) -> Vec<u8> {
+    pub fn mem_read(&mut self, virtual_address: u64, length: u64) -> Vec<u8> {
+        let physical_address = self.translate_virtual_to_physical_address(virtual_address);
+        let data = self.mem_read_phys(physical_address, length);
         for ba in &self.break_on_access {
-            if !(address > ba.0+ba.1 as u64 || address+length < ba.0) { println!("{:x} {} {:x} {}", ba.0, ba.1, address-ba.0, length); }
+            if !(virtual_address > ba.1 as u64 || virtual_address+length < ba.0) { println!("{:x}+{:x}: {:x?}", ba.0, virtual_address-ba.0, data); }
         }
-        let address = self.translate_virtual_to_physical_address(address);
-        self.mem_read_phys(address, length)
+        data
     }
 
     fn mem_read_phys(&mut self, address: u64, length: u64) -> Vec<u8> {

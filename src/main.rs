@@ -27,6 +27,7 @@ fn main() {
     fn from<T: Sized>(p: &T) -> &[u8] { unsafe{std::slice::from_raw_parts((p as *const T) as *const u8, std::mem::size_of::<T>())} }
     // Setup system table
     let system_table = {use crate::uefi::*;
+        let top = context.rsp as u64;
         context.stack_push(from(&default_input()));
         let stdin = unsafe{&*(context.rsp as *const Input)};
         context.stack_push(from(&default_output(&default_output_data())));
@@ -39,7 +40,7 @@ fn main() {
         let boot_services = unsafe{&*(context.rsp as *const BootServices)};
         let system_table = default_system_table(&stdin, &stdout, &stderr, &runtime_services, &boot_services);
         context.stack_push(from(&system_table));
-        //context.break_on_access.push((context.rsp as u64, from(&system_table).len()));
+        context.break_on_access.push((context.rsp as u64, top));
         context.rsp // "Allocated on the stack"
     };
     // Emulate call to efi_main(image_handle: Handle, system_table: SystemTable<Boot>) from UEFI (EFI ABI = MS x64 = RCX, RDX, R8, R9)

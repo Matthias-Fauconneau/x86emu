@@ -95,7 +95,7 @@ impl<'a> Decoder<'a> {
             if print_registers {
                 println!("{}", self.machine_state);
             }
-            if self.counter > 8192 { panic!("Watchdog"); }
+            if self.machine_state.mem_read(self.machine_state.rip as u64, 16) == [0; 16] { panic!("{:x}", self.machine_state.rip); }
         }
     }
 

@@ -39,7 +39,7 @@ pub struct MachineState { // -> ExecutionContext
     pub idt: i64,
 
     pub memory: FnvHashMap<u64, Vec<u8>>,
-    pub break_on_access: Vec<(u64, usize)>,
+    pub break_on_access: Vec<(u64, u64)>,
     pub print_instructions: bool, // Kept in execution context to avoid passing to every instruction execution functions
 }
 
