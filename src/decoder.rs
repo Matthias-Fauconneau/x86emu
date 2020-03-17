@@ -83,7 +83,7 @@ impl<'a> Decoder<'a> {
                 }
             };
 
-            print!("{:x}: ", instruction_start);
+            if self.machine_state.print_instructions { print!("{:x}: ", instruction_start); }
             self.execute_instruction(instruction);
             match instruction.instruction {
                 Instruction::Int => {

@@ -44,7 +44,7 @@ impl MachineState {
     // FIXME: fast path for fixed length (e.g 1 byte)
     pub fn mem_read(&mut self, address: u64, length: u64) -> Vec<u8> {
         for ba in &self.break_on_access {
-            if(!(address > ba.0+ba.1 as u64 || address+length < ba.0)) { panic!("{:x} {} {:x} {}", ba.0, ba.1, address-ba.0, length); }
+            if !(address > ba.0+ba.1 as u64 || address+length < ba.0) { println!("{:x} {} {:x} {}", ba.0, ba.1, address-ba.0, length); }
         }
         let address = self.translate_virtual_to_physical_address(address);
         self.mem_read_phys(address, length)

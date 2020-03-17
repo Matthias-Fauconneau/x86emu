@@ -1226,9 +1226,7 @@ impl EmulationCPU {
         machine_state.print_instr("out   %al,(%dx)");
         let al = machine_state.get_register_value(&Register::AL);
         let dx = machine_state.get_register_value(&Register::DX);
-        println!("AL: {:x}, DX: {:x}", al as u8, dx);
-
-        // TODO:  out not implemented
+        //println!("AL: {:x}, DX: {:x}", al as u8, dx);
     }
 
     pub fn wrmsr(&self, machine_state: &mut MachineState) {

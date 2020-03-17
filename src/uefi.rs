@@ -1,19 +1,21 @@
 //#![feature(abi_efiapi)]
 use {std::{ptr::{null, null_mut}, ffi::c_void}, uefi::{Status, data_types::{Guid, Handle, chars::Char16, Event},
-                table::{Header,Revision, runtime::{RuntimeServices, Time, TimeCapabilities, ResetType},
-                    boot::{BootServices,Tpl, MemoryDescriptor, MemoryType, MemoryMapKey, EventType, EventNotifyFn},
+                proto::console::text::{RawKey, OutputData},
+                table::{Header,Revision, runtime::{Time, TimeCapabilities, ResetType},
+                    boot::{Tpl, MemoryDescriptor, MemoryType, MemoryMapKey, EventType, EventNotifyFn},
                     SystemTableImpl as SystemTable},
-                proto::console::text::{self, Input, RawKey, Output, OutputData}}};
+        } };
+pub use uefi::{proto::console::text::{Input, Output}, table::{boot::BootServices, runtime::RuntimeServices}};
 
-static mut stdin : text::Input = text::Input{
+pub fn default_input() -> Input { Input{
     reset: {extern "efiapi" fn i(this: &mut Input, extended: bool) -> Status { unimplemented!() } i},
     read_key_stroke: {extern "efiapi" fn i(this: &mut Input, key: *mut RawKey) -> Status { unimplemented!() } i},
     wait_for_key: Event(null_mut())
-};
+} }
 
-static static_output_data : OutputData = OutputData{max_mode: 0, mode: -1, attribute: 0, cursor_column: 0, cursor_row: 0, cursor_visible: false};
+pub fn default_output_data() -> OutputData { OutputData{max_mode: 0, mode: -1, attribute: 0, cursor_column: 0, cursor_row: 0, cursor_visible: false} }
 
-const fn default_output(output_data : &OutputData) -> Output { Output{
+pub fn default_output(output_data : &OutputData) -> Output { Output{
     reset: {extern "efiapi" fn i(this: &Output, extended: bool) -> Status { unimplemented!() } i},
     output_string: {unsafe extern "efiapi" fn i(this: &Output, string: *const Char16) -> Status { unimplemented!() } i},
     test_string: {unsafe extern "efiapi" fn i(this: &Output, string: *const Char16) -> Status { unimplemented!() } i},
@@ -26,17 +28,16 @@ const fn default_output(output_data : &OutputData) -> Output { Output{
     data: &output_data,
 } }
 
-static mut stdout : text::Output = default_output(&static_output_data);
-static mut stderr : text::Output = default_output(&static_output_data);
-static runtime : RuntimeServices = RuntimeServices{ header: Header{ signature:0, revision:Revision(0), size:0, crc:0, _reserved:0 },
+pub fn default_runtime_services() -> RuntimeServices { RuntimeServices{ header: Header{ signature:0, revision:Revision(0), size:0, crc:0, _reserved:0 },
     get_time: {unsafe extern "efiapi" fn i(time: *mut Time, capabilities: *mut TimeCapabilities) -> Status { unimplemented!() } i},
     set_time: {unsafe extern "efiapi" fn i(time: &Time) -> Status { unimplemented!() } i},
     _pad: [0; 2],
     set_virtual_address_map: {unsafe extern "efiapi" fn i(map_size: usize, desc_size: usize, desc_version: u32, virtual_map: *mut MemoryDescriptor) -> Status { unimplemented!() } i},
     _pad2: [0; 5],
     reset: {unsafe extern "efiapi" fn i(rt: ResetType, status: Status, data_size: usize, data: *const u8) -> ! { unimplemented!() } i}
-};
-static boot : BootServices = BootServices{ header : Header{ signature:0, revision:Revision(0), size:0, crc:0, _reserved:0 },
+}}
+
+pub fn default_boot_services() -> BootServices { BootServices{ header : Header{ signature:0, revision:Revision(0), size:0, crc:0, _reserved:0 },
     raise_tpl: {unsafe extern "efiapi" fn i(new_tpl: Tpl) -> Tpl { unimplemented!(); } i},
     restore_tpl: {unsafe extern "efiapi" fn i(old_tpl: Tpl) { unimplemented!(); } i},
     allocate_pages: {extern "efiapi" fn i(alloc_ty: u32, mem_ty: MemoryType, count: usize, addr: &mut u64) -> Status { unimplemented!(); } i},
@@ -84,12 +85,13 @@ static boot : BootServices = BootServices{ header : Header{ signature:0, revisio
     copy_mem: {unsafe extern "efiapi" fn i(dest: *mut u8, src: *const u8, len: usize) { unimplemented!(); } i},
     set_mem: {unsafe extern "efiapi" fn i(buffer: *mut u8, len: usize, value: u8) { unimplemented!(); } i},
     create_event_ex: 0,
-};
+} }
 
-pub fn default_system_table() -> SystemTable {
+pub fn default_system_table<'boot, 'runtime>(stdin: &'boot Input, stdout: &'boot Output<'boot>, stderr: &'boot Output<'boot>,
+    runtime: &'runtime RuntimeServices, boot:&'boot BootServices) -> SystemTable<'boot, 'runtime> {
         SystemTable{header:Header{signature:0,revision:Revision(0),size:0,crc:0,_reserved:0}, fw_vendor:null(), fw_revision:Revision(0),
-            stdin_handle:Handle(null_mut()), stdin: unsafe{&mut stdin},
-            stdout_handle:Handle(null_mut()), stdout: unsafe{&mut stdout},
-            stderr_handle:Handle(null_mut()), stderr: unsafe{&mut stderr},
+            stdin_handle:Handle(null_mut()), stdin: &stdin,
+            stdout_handle:Handle(null_mut()), stdout: &stdout,
+            stderr_handle:Handle(null_mut()), stderr: &stderr,
             runtime: &runtime, boot: &boot, nr_cfg: 0, cfg_table:null() }
 }
