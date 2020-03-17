@@ -1,9 +1,37 @@
-use std::process;
 use std::u64;
-use crate::instruction_set::{InstructionArgument, InstructionArguments, Register, Flags};
+use crate::instruction_set::{InstructionArgument, InstructionArguments, Register, Flags, ArgumentSize, get_register_size};
 use crate::machine_state::{MachineState};
-use crate::instruction_set::{ArgumentSize, get_register_size};
 use crate::utils::{convert_i32_to_u8vec, convert_i64_to_u8vec};
+
+impl MachineState {
+    pub fn print_instr(&self, instruction: &str) {
+        if self.print_instructions {
+            println!("{:<6}", instruction);
+        }
+    }
+
+    pub fn print_instr_arg_no_size(&self, instruction: &str, arg: &InstructionArguments) {
+        if self.print_instructions {
+            println!("{:<6} {}", instruction, arg);
+        }
+    }
+
+    pub fn print_instr_arg(&self, instruction: &str, arg: &InstructionArguments) {
+        if self.print_instructions {
+            match arg.explicit_size {
+                Some(size) => {
+                    match size {
+                        ArgumentSize::Bit8 => println!("{:<6} {}", instruction.to_owned() + "b", arg),
+                        ArgumentSize::Bit16 => println!("{:<6} {}", instruction.to_owned() + "w", arg),
+                        ArgumentSize::Bit32 => println!("{:<6} {}", instruction.to_owned() + "l", arg),
+                        ArgumentSize::Bit64 => println!("{:<6} {}", instruction.to_owned() + "q", arg),
+                    }
+                },
+                None => println!("{:<6} {}", instruction, arg),
+            }
+        }
+    }
+}
 
 pub struct EmulationCPU;
 
@@ -1346,24 +1374,6 @@ impl EmulationCPU {
         // let p6 = machine_state.get_register_value(&Register::R9) as u64;
 
         match rax {
-            /* read */ /*0 => (),*/
-            /* write */ 1 => {
-                let data = machine_state.mem_read(p2, p3);
-                unsafe {
-                    let ret = syscall!(WRITE, p1, data.as_ptr(), p3);
-                    machine_state.set_register_value(&Register::RAX, ret as i64);
-                }
-            }
-            /* sys_open */ 2 => (),
-            /* sys_close */ 3 => (),
-            /* sys_ioctl */ 16 => (),
-            /* sys_writev */ 20 => (),
-            /* sys_exit */ 60 => {
-                process::exit(0);
-            },
-            /* arch_prctl */ 158 => (),
-            /* sys_set_tid_address */ 218 => (),
-            /* sys_exit_group */ 231 => (),
             _ => panic!("unsupported syscall: {}", rax),
         }
     }

@@ -1,12 +1,49 @@
 use fnv::FnvHashMap;
 use std::collections::hash_map::{Entry};
 
-use crate::instruction_set::{Register, RegisterSize, InstructionArguments, InstructionArgumentsBuilder,
-                      InstructionArgument, ArgumentSize, Instruction, InstructionCache};
+use crate::instruction_set::{Register, RegisterSize, InstructionArguments, InstructionArgumentsBuilder, InstructionArgument, ArgumentSize, Instruction, InstructionCache};
 use crate::machine_state::MachineState;
-use crate::cpu::emu_instructions::EmulationCPU;
+use crate::instructions::EmulationCPU;
 
 use zero;
+
+#[derive(PartialEq)]
+enum RegOrOpcode {
+    Register,
+    Opcode,
+}
+
+#[derive(PartialEq)]
+enum ImmediateSize {
+    None,
+    Bit8,
+    Bit32,
+}
+
+bitflags! {
+    struct REX: u8 {
+        const B = 0b00000001;
+        const X = 0b00000010;
+        const R = 0b00000100;
+        const W = 0b00001000;
+    }
+}
+
+bitflags! {
+    struct DecoderFlags: u64 {
+        const REVERSED_REGISTER_DIRECTION = 1 << 0;
+        const ADDRESS_SIZE_OVERRIDE = 1 << 2;
+        const REPEAT_EQUAL = 1 << 3;
+        const REPEAT_NOT_EQUAL = 1 << 4;
+        const NEW_64BIT_REGISTER = 1 << 5;
+        const NEW_8BIT_REGISTER = 1 << 6;
+        const MOD_R_M_EXTENSION = 1 << 7;
+        const SIB_EXTENSION = 1 << 8;
+        const OPERAND_16_BIT = 1 << 9;
+        const OPERAND_64_BIT = 1 << 10;
+        const SIB_DISPLACEMENT_ONLY = 1 << 11;
+    }
+}
 
 pub struct Decoder<'a> {
     machine_state: &'a mut MachineState,
@@ -28,29 +65,27 @@ impl<'a> Decoder<'a> {
         loop {
             self.counter += 1;
             let instruction_start = self.machine_state.rip as u64;
-
-            let cache_entry = match instruction_cache.entry(instruction_start) {
+            let instruction = match instruction_cache.entry(instruction_start) {
                 Entry::Occupied(entry) => {
-                    let ref entry: InstructionCache = *entry.into_mut();
-                    self.machine_state.rip += entry.size as i64;
-                    entry
+                    let ref instruction: InstructionCache = *entry.into_mut();
+                    self.machine_state.rip += instruction.size as i64;
+                    instruction
                 },
                 Entry::Vacant(entry) => {
-                    let cache_entry = self.decode();
-
+                    let instruction = self.decode();
                     let instruction_end = self.machine_state.rip as u64;
-
-                    let cache_entry = InstructionCache {
-                        instruction: cache_entry.0,
-                        arguments: cache_entry.1,
+                    let instruction = InstructionCache {
+                        instruction: instruction.0,
+                        arguments: instruction.1,
                         size: instruction_end - instruction_start,
                     };
-                    entry.insert(cache_entry)
+                    entry.insert(instruction)
                 }
             };
 
-            self.execute_instruction(cache_entry);
-            match cache_entry.instruction {
+            print!("{:x}:", instruction_start);
+            self.execute_instruction(instruction);
+            match instruction.instruction {
                 Instruction::Int => {
                     break;
                 },
@@ -60,6 +95,7 @@ impl<'a> Decoder<'a> {
             if self.machine_state.print_registers {
                 println!("{}", self.machine_state);
             }
+            if self.counter > 16 { panic!("{}", self.counter); }
         }
     }
 
@@ -986,7 +1022,7 @@ impl<'a> Decoder<'a> {
                 // todo: cleanup code
                 let modrm = self.machine_state.mem_read_byte(rip + 1);
                 let opcode = (modrm & 0b00111000) >> 3;
-                let (mut argument, ip_offset) = self.get_argument(register_size,
+                let (mut argument, ip_offset) = self.get_argument(if opcode == 2 { RegisterSize::Bit64 } else {register_size}, // FF /2 (Call near absolute indirect) implies REX.W
                                                                   RegOrOpcode::Register,
                                                                   ImmediateSize::None,
                                                                   decoder_flags |
@@ -1985,12 +2021,7 @@ impl<'a> Decoder<'a> {
         argument
     }
 
-    fn override_argument_size(&mut self,
-                              argument: &mut InstructionArguments,
-                              size: ArgumentSize,
-                              rip: u64,
-                              decoder_flags: &DecoderFlags) {
-
+    fn override_argument_size(&mut self, argument: &mut InstructionArguments, size: ArgumentSize, rip: u64, decoder_flags: &DecoderFlags) {
         let new_first_argument = match argument.first_argument {
             Some(ref first_argument) => {
                 match *first_argument {
@@ -2023,44 +2054,6 @@ impl<'a> Decoder<'a> {
             Some(nfa) => argument.first_argument = Some(nfa),
             None => (),
         }
-    }
-}
-
-#[derive(PartialEq)]
-enum RegOrOpcode {
-    Register,
-    Opcode,
-}
-
-#[derive(PartialEq)]
-enum ImmediateSize {
-    None,
-    Bit8,
-    Bit32,
-}
-
-bitflags! {
-    struct REX: u8 {
-        const B = 0b00000001;
-        const X = 0b00000010;
-        const R = 0b00000100;
-        const W = 0b00001000;
-    }
-}
-
-bitflags! {
-    struct DecoderFlags: u64 {
-        const REVERSED_REGISTER_DIRECTION = 1 << 0;
-        const ADDRESS_SIZE_OVERRIDE = 1 << 2;
-        const REPEAT_EQUAL = 1 << 3;
-        const REPEAT_NOT_EQUAL = 1 << 4;
-        const NEW_64BIT_REGISTER = 1 << 5;
-        const NEW_8BIT_REGISTER = 1 << 6;
-        const MOD_R_M_EXTENSION = 1 << 7;
-        const SIB_EXTENSION = 1 << 8;
-        const OPERAND_16_BIT = 1 << 9;
-        const OPERAND_64_BIT = 1 << 10;
-        const SIB_DISPLACEMENT_ONLY = 1 << 11;
     }
 }
 

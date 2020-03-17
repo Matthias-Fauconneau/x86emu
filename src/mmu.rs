@@ -90,10 +90,10 @@ impl MachineState {
     }
 
     fn mem_write_phys(&mut self, address: u64, data: &[u8]) {
-        const MEMORY_OFFSET: u64 = 0xB8000;
+        /*const MEMORY_OFFSET: u64 = 0xB8000;
         if address >= MEMORY_OFFSET && address <= (MEMORY_OFFSET + 80 * 25 * 2) && address % 2 == 0{
             println!("VIDEO: {}", data[0] as char);
-        }
+        }*/
 
         let mut page_number = address / PAGE_SIZE;
         let mut page_offset = address % PAGE_SIZE;

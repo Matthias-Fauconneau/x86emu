@@ -391,13 +391,13 @@ fn format_effective_address(arg: &InstructionArgument) -> String {
     }
 }
 
-pub struct InstructionCache {
+pub struct InstructionCache { // -> Instruction
     pub instruction: Instruction,
     pub arguments: Option<InstructionArguments>,
     pub size: u64
 }
 
-pub enum Instruction {
+pub enum Instruction { // -> Opcode
     Adc,
     Add,
     And,
@@ -495,37 +495,3 @@ pub enum Instruction {
     Setle,
     Setg,
 }
-
-/*
-use instruction_set::{InstructionArguments, ArgumentSize};
-
-impl MachineState {
-    pub fn print_instr(&self, instruction: &str) {
-        if self.print_instructions {
-            println!("{:<6}", instruction);
-        }
-    }
-
-    pub fn print_instr_arg_no_size(&self, instruction: &str, arg: &InstructionArguments) {
-        if self.print_instructions {
-            println!("{:<6} {}", instruction, arg);
-        }
-    }
-
-    pub fn print_instr_arg(&self, instruction: &str, arg: &InstructionArguments) {
-        if self.print_instructions {
-            match arg.explicit_size {
-                Some(size) => {
-                    match size {
-                        ArgumentSize::Bit8 => println!("{:<6} {}", instruction.to_owned() + "b", arg),
-                        ArgumentSize::Bit16 => println!("{:<6} {}", instruction.to_owned() + "w", arg),
-                        ArgumentSize::Bit32 => println!("{:<6} {}", instruction.to_owned() + "l", arg),
-                        ArgumentSize::Bit64 => println!("{:<6} {}", instruction.to_owned() + "q", arg),
-                    }
-                },
-                None => println!("{:<6} {}", instruction, arg),
-            }
-        }
-    }
-}
-*/
