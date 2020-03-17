@@ -60,7 +60,7 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    pub fn execute(&mut self) {
+    pub fn execute(&mut self, print_registers: bool) {
         let mut instruction_cache = FnvHashMap::default();
         loop {
             self.counter += 1;
@@ -83,7 +83,7 @@ impl<'a> Decoder<'a> {
                 }
             };
 
-            print!("{:x}:", instruction_start);
+            print!("{:x}: ", instruction_start);
             self.execute_instruction(instruction);
             match instruction.instruction {
                 Instruction::Int => {
@@ -92,10 +92,10 @@ impl<'a> Decoder<'a> {
                 _ => (),
             }
 
-            if self.machine_state.print_registers {
+            if print_registers {
                 println!("{}", self.machine_state);
             }
-            if self.counter > 16 { panic!("{}", self.counter); }
+            if self.counter > 8192 { panic!("Watchdog"); }
         }
     }
 
@@ -1022,11 +1022,9 @@ impl<'a> Decoder<'a> {
                 // todo: cleanup code
                 let modrm = self.machine_state.mem_read_byte(rip + 1);
                 let opcode = (modrm & 0b00111000) >> 3;
-                let (mut argument, ip_offset) = self.get_argument(if opcode == 2 { RegisterSize::Bit64 } else {register_size}, // FF /2 (Call near absolute indirect) implies REX.W
-                                                                  RegOrOpcode::Register,
-                                                                  ImmediateSize::None,
-                                                                  decoder_flags |
-                                                                  DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                let register_size = if opcode == 2 || opcode == 4 {RegisterSize::Bit64} else {register_size}; // FF /2, 4 (Call/jmp near absolute indirect) implies REX.W
+                let (mut argument, ip_offset) =
+                    self.get_argument(register_size, RegOrOpcode::Register, ImmediateSize::None, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
                 argument.second_argument = None;
                 argument.opcode = Some(opcode);
                 self.inc_rip(ip_offset);

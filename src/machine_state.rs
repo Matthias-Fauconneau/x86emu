@@ -6,7 +6,7 @@ use zero;
 use crate::instruction_set::{InstructionArgument, Register, Flags, ArgumentSize};
 use crate::utils::{convert_i8_to_u8vec, convert_i16_to_u8vec, convert_i32_to_u8vec, convert_i64_to_u8vec};
 
-pub struct MachineState {
+pub struct MachineState { // -> ExecutionContext
     pub rip: i64,
 
     pub rax: i64,
@@ -38,10 +38,9 @@ pub struct MachineState {
     pub gdt: i64,
     pub idt: i64,
 
-    pub print_instructions: bool,
-    pub print_registers: bool,
-
     pub memory: FnvHashMap<u64, Vec<u8>>,
+    pub break_on_access: Vec<(u64, usize)>,
+    pub print_instructions: bool, // Kept in execution context to avoid passing to every instruction execution functions
 }
 
 impl MachineState {
@@ -77,10 +76,10 @@ impl MachineState {
             gdt: 0,
             idt: 0,
 
-            print_instructions: false,
-            print_registers: false,
-
             memory: FnvHashMap::default(),
+            break_on_access: Vec::default(),
+
+            print_instructions: false,
         }
     }
 
