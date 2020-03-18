@@ -1,7 +1,7 @@
-#![feature(abi_efiapi, const_fn)]
+#![allow(incomplete_features)]
+#![feature(const_generics, abi_efiapi, box_syntax)]
 #[macro_use] extern crate bitflags;
-mod utils;
-mod mmu;
+mod mmu; use mmu::{from, as_u16, as_u64};
 mod instruction_set;
 mod machine_state;
 mod instructions;
@@ -22,10 +22,10 @@ fn main() {
         }
         context.rip = (pe.image_base as u64 + pe.entry as u64) as i64; // address_of_entry_point
     }
-    let mut cpu = instructions::EmulationCPU{};
+    for i in 0..16 { context.get_page(0x7fffffff0+i); } // Host allocate physical pages for stack (allow to make context.read(&self ...) (not mut))
     context.rsp = 0x7fffffffe018; // ?
-    fn from<T: Sized>(p: &T) -> &[u8] { unsafe{std::slice::from_raw_parts((p as *const T) as *const u8, std::mem::size_of::<T>())} }
     // Setup system table
+    let mut traps : fnv::FnvHashMap<u64, Box<dyn Fn(&mut machine_state::MachineState)>> = fnv::FnvHashMap::default();
     let system_table = {use crate::uefi::*;
         let top = context.rsp as u64;
         context.stack_push(from(&default_input()));
@@ -40,13 +40,24 @@ fn main() {
         let boot_services = unsafe{&*(context.rsp as *const BootServices)};
         let system_table = default_system_table(&stdin, &stdout, &stderr, &runtime_services, &boot_services);
         context.stack_push(from(&system_table));
-        context.break_on_access.push((context.rsp as u64, top));
+        fn address_of<T>(t:&T) -> u64 { return t as *const T as u64; }
+        let output_string = as_u64(context.read(address_of(&stdout.output_string)));
+        traps.insert(output_string, box |context|{
+            let (_self, string) = (context.rcx, context.rdx);
+            let end = {let mut ptr = string; while as_u16(context.read(ptr as u64)) != 0 { ptr += 2; } ptr};
+            use std::io::Write;
+            // Assumes ASCII
+            std::io::stdout().write_all(&context.mem_read(string as u64, (end-string) as usize).into_iter().step_by(2).collect::<Vec<u8>>()).unwrap();
+            context.rax = 0;
+            instructions::EmulationCPU{}.ret(context);
+        });
         context.rsp // "Allocated on the stack"
     };
     // Emulate call to efi_main(image_handle: Handle, system_table: SystemTable<Boot>) from UEFI (EFI ABI = MS x64 = RCX, RDX, R8, R9)
     //machine_state.rcx = image_handle;
     context.rdx = system_table;
     context.print_instructions = false;
+    let mut cpu = instructions::EmulationCPU{};
     let mut decoder = decoder::Decoder::new(&mut cpu, &mut context);
-    decoder.execute(false);
+    decoder.execute(traps, false);
 }

@@ -1,7 +1,6 @@
-use std::u64;
+use crate::mmu::from;
 use crate::instruction_set::{InstructionArgument, InstructionArguments, Register, Flags, ArgumentSize, get_register_size};
 use crate::machine_state::{MachineState};
-use crate::utils::{convert_i32_to_u8vec, convert_i64_to_u8vec};
 
 impl MachineState {
     pub fn print_instr(&self, instruction: &str) {
@@ -184,16 +183,11 @@ impl EmulationCPU {
     // all other instructions
     pub fn push(&self, machine_state: &mut MachineState, arg: &InstructionArguments) {
         machine_state.print_instr_arg("push", &arg);
-        let first_argument = arg.get_one_argument();
+        let value = machine_state.get_value(&arg.get_one_argument(), arg.size());
+        let value32 = value as i32;
         let vector = match arg.size() {
-            ArgumentSize::Bit32 => {
-                convert_i32_to_u8vec(machine_state.get_value(&first_argument,
-                                                             ArgumentSize::Bit32) as i32)
-            }
-            ArgumentSize::Bit64 => {
-                convert_i64_to_u8vec(machine_state.get_value(&first_argument,
-                                                             ArgumentSize::Bit64))
-            }
+            ArgumentSize::Bit32 => { from(&value32) }
+            ArgumentSize::Bit64 => { from(&value) }
             _ => panic!("Unsupported push value size"),
         };
         machine_state.stack_push(&vector);
@@ -336,8 +330,8 @@ impl EmulationCPU {
 
     pub fn call(&self, machine_state: &mut MachineState, arg: &InstructionArguments) {
         machine_state.print_instr_arg("call", &arg);
-        let rip = convert_i64_to_u8vec(machine_state.rip);
-        machine_state.stack_push(&rip);
+        let value = machine_state.rip;
+        machine_state.stack_push(from(&value));
         self.jmp_iml(machine_state, arg);
     }
 
@@ -841,8 +835,8 @@ impl EmulationCPU {
     }
 
     pub fn pushf(&self, machine_state: &mut MachineState) {
-        let vector = convert_i64_to_u8vec(machine_state.rflags);
-        machine_state.stack_push(&vector);
+        let value = machine_state.rflags;
+        machine_state.stack_push(from(&value));
     }
 
     pub fn popf(&self, machine_state: &mut MachineState) {
@@ -926,12 +920,12 @@ impl EmulationCPU {
                 // TODO:  address calculation could be incorrect
                 from -= length;
                 to -= length;
-                let data = machine_state.mem_read(from as u64, length as u64);
+                let data = machine_state.mem_read(from as u64, length as usize);
                 machine_state.mem_write(to as u64, &data);
                 machine_state.set_register_value(&Register::RSI, from);
                 machine_state.set_register_value(&Register::RDI, to);
             } else {
-                let data = machine_state.mem_read(from as u64, length as u64);
+                let data = machine_state.mem_read(from as u64, length as usize);
                 machine_state.mem_write(to as u64, &data);
                 // TODO:  rsi and rdi not set
                 // TODO: set rsi, rdi registers
@@ -939,7 +933,7 @@ impl EmulationCPU {
             machine_state.set_register_value(&Register::RCX, 0);
         } else {
             machine_state.print_instr("movs %ds:(%rsi),%es:(%rdi)");
-            let data = machine_state.mem_read(from as u64, bytes_per_mov as u64);
+            let data = machine_state.mem_read(from as u64, bytes_per_mov as usize);
             machine_state.mem_write(to as u64, &data);
         }
     }

@@ -60,18 +60,22 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    pub fn execute(&mut self, print_registers: bool) {
+    pub fn execute(&mut self, traps: FnvHashMap<u64, Box<dyn Fn(&mut MachineState)>>, print_registers: bool) {
         let mut instruction_cache = FnvHashMap::default();
         loop {
-            self.counter += 1;
             let instruction_start = self.machine_state.rip as u64;
+            if let Some(closure) = traps.get(&instruction_start) {
+                closure(self.machine_state);
+                continue;
+            }
+            if self.machine_state.mem_read(self.machine_state.rip as u64, 16) == [0; 16] { panic!("{:x} {:x?}", self.machine_state.rip, traps.keys()); }
             let instruction = match instruction_cache.entry(instruction_start) {
                 Entry::Occupied(entry) => {
                     let ref instruction: InstructionCache = *entry.into_mut();
                     self.machine_state.rip += instruction.size as i64;
                     instruction
                 },
-                Entry::Vacant(entry) => {
+                Entry::Vacant(slot) => {
                     let instruction = self.decode();
                     let instruction_end = self.machine_state.rip as u64;
                     let instruction = InstructionCache {
@@ -79,7 +83,7 @@ impl<'a> Decoder<'a> {
                         arguments: instruction.1,
                         size: instruction_end - instruction_start,
                     };
-                    entry.insert(instruction)
+                    slot.insert(instruction)
                 }
             };
 
@@ -95,7 +99,7 @@ impl<'a> Decoder<'a> {
             if print_registers {
                 println!("{}", self.machine_state);
             }
-            if self.machine_state.mem_read(self.machine_state.rip as u64, 16) == [0; 16] { panic!("{:x}", self.machine_state.rip); }
+            self.counter += 1;
         }
     }
 

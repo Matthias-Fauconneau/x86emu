@@ -1,10 +1,4 @@
-use std::fmt;
-
-use fnv::FnvHashMap;
-use zero;
-
-use crate::instruction_set::{InstructionArgument, Register, Flags, ArgumentSize};
-use crate::utils::{convert_i8_to_u8vec, convert_i16_to_u8vec, convert_i32_to_u8vec, convert_i64_to_u8vec};
+use {fnv::FnvHashMap, crate::{mmu::from, instruction_set::{InstructionArgument, Register, Flags, ArgumentSize}}};
 
 pub struct MachineState { // -> ExecutionContext
     pub rip: i64,
@@ -78,7 +72,6 @@ impl MachineState {
 
             memory: FnvHashMap::default(),
             break_on_access: Vec::default(),
-
             print_instructions: false,
         }
     }
@@ -397,13 +390,15 @@ impl MachineState {
             }
             InstructionArgument::EffectiveAddress { .. } => {
                 let address = self.calculate_effective_address(arg);
+                let value8 = value as i8;
+                let value16 = value as i16;
+                let value32 = value as i32;
                 let vector = match argument_size {
-                    ArgumentSize::Bit8 => convert_i8_to_u8vec(value as i8),
-                    ArgumentSize::Bit16 => convert_i16_to_u8vec(value as i16),
-                    ArgumentSize::Bit32 => convert_i32_to_u8vec(value as i32),
-                    ArgumentSize::Bit64 => convert_i64_to_u8vec(value),
+                    ArgumentSize::Bit8 => from(&value8),
+                    ArgumentSize::Bit16 => from(&value16),
+                    ArgumentSize::Bit32 => from(&value32),
+                    ArgumentSize::Bit64 => from(&value),
                 };
-
                 self.mem_write(address, &vector);
             }
             InstructionArgument::Immediate { .. } => panic!("Cannot set value on immediate value"),
@@ -429,8 +424,8 @@ impl MachineState {
     }
 }
 
-impl fmt::Display for MachineState {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl std::fmt::Display for MachineState {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f,
                "rax            {:#x}\n\
                 rbx            {:#x}\n\
