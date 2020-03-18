@@ -7,8 +7,6 @@ edition = '2018'
 [dependencies]
 uefi = { path = "../uefi" }
 goblin = ""
-zero = ""
 bitflags = ""
 time = ""
 fnv = ""
-syscall = ""

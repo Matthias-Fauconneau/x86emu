@@ -1,81 +1,21 @@
-use {fnv::FnvHashMap, crate::{mmu::from, instruction_set::{InstructionArgument, Register, Flags, ArgumentSize}}};
+use crate::{memory::Memory, instruction::{Argument, Register, Flags, ArgumentSize}};
 
-pub struct MachineState { // -> ExecutionContext
+#[derive(Default)]
+pub struct State {
     pub rip: i64,
-
-    pub rax: i64,
-    pub rbx: i64,
-    pub rcx: i64,
-    pub rdx: i64,
-    pub rsp: i64,
-    pub rbp: i64,
-    pub rsi: i64,
-    pub rdi: i64,
-
-    pub r8: i64,
-    pub r9: i64,
-    pub r10: i64,
-    pub r11: i64,
-    pub r12: i64,
-    pub r13: i64,
-    pub r14: i64,
-    pub r15: i64,
-
+    pub rax: i64, pub rbx: i64, pub rcx: i64, pub rdx: i64, pub rsp: i64, pub rbp: i64, pub rsi: i64, pub rdi: i64,
+    pub r8: i64, pub r9: i64, pub r10: i64, pub r11: i64, pub r12: i64, pub r13: i64, pub r14: i64, pub r15: i64,
     pub rflags: i64,
-
-    pub cr0: i64,
-    pub cr2: i64,
-    pub cr3: i64,
-    pub cr4: i64,
-    pub cr8: i64,
-
+    pub cr0: i64, pub cr2: i64, /*cr3: memory.cr3,*/ pub cr4: i64, pub cr8: i64,
     pub gdt: i64,
     pub idt: i64,
 
-    pub memory: FnvHashMap<u64, Vec<u8>>,
+    pub memory: Memory,
     pub break_on_access: Vec<(u64, u64)>,
     pub print_instructions: bool, // Kept in execution context to avoid passing to every instruction execution functions
 }
 
-impl MachineState {
-    pub fn new() -> MachineState {
-        MachineState {
-            rip: 0,
-            rax: 0,
-            rbx: 0,
-            rcx: 0,
-            rdx: 0,
-            rsp: 0,
-            rbp: 0,
-            rsi: 0,
-            rdi: 0,
-
-            r8: 0,
-            r9: 0,
-            r10: 0,
-            r11: 0,
-            r12: 0,
-            r13: 0,
-            r14: 0,
-            r15: 0,
-
-            rflags: 0,
-
-            cr0: 0,
-            cr2: 0,
-            cr3: 0,
-            cr4: 0,
-            cr8: 0,
-
-            gdt: 0,
-            idt: 0,
-
-            memory: FnvHashMap::default(),
-            break_on_access: Vec::default(),
-            print_instructions: false,
-        }
-    }
-
+impl State{
     pub fn get_flag(&self, flag: Flags) -> bool {
         let f = flag as i64;
         self.rflags & f == f
@@ -108,39 +48,24 @@ impl MachineState {
         self.set_flag(Flags::Parity, parity != 0b1)
     }
 
-    pub fn get_value(&mut self, arg: &InstructionArgument, argument_size: ArgumentSize) -> i64 {
+    pub fn get_value(&mut self, arg: &Argument, argument_size: ArgumentSize) -> i64 {
         match *arg {
-            InstructionArgument::Register { ref register } => self.get_register_value(register),
-            InstructionArgument::Immediate { immediate } => immediate,
-            InstructionArgument::EffectiveAddress { .. } => {
+            Argument::Register { ref register } => self.get_register_value(register),
+            Argument::Immediate { immediate } => immediate,
+            Argument::EffectiveAddress { .. } => {
                 let address = self.calculate_effective_address(arg);
                 match argument_size {
-                    ArgumentSize::Bit8 => self.mem_read_byte(address) as i64,
+                    ArgumentSize::Bit8 => self.memory.read_byte(address) as i64,
                     ArgumentSize::Bit16 => {
-                        let mut value: i16 = 0;
-                        let val = self.mem_read(address, 2);
-
-                        for (i, v) in val.iter().enumerate() {
-                            value |= (*v as i16) << (i * 8);
-                        }
+                        let value: i16 = self.memory.read(address);
                         value as i64
                     }
                     ArgumentSize::Bit32 => {
-                        let mut value: i32 = 0;
-                        let val = self.mem_read(address, 4);
-
-                        for (i, v) in val.iter().enumerate() {
-                            value |= (*v as i32) << (i * 8);
-                        }
+                        let value: i32 = self.memory.read(address);
                         value as i64
                     }
                     ArgumentSize::Bit64 => {
-                        let mut value: i64 = 0;
-                        let val = self.mem_read(address, 8);
-
-                        for (i, v) in val.iter().enumerate() {
-                            value |= (*v as i64) << (i * 8);
-                        }
+                        let value: i64 = self.memory.read(address);
                         value
                     }
                 }
@@ -170,7 +95,7 @@ impl MachineState {
 
             Register::CR0 => self.cr0,
             Register::CR2 => self.cr2,
-            Register::CR3 => self.cr3,
+            Register::CR3 => self.memory.cr3,
             Register::CR4 => self.cr4,
             Register::CR8 => self.cr8,
 
@@ -278,7 +203,7 @@ impl MachineState {
             },
             Register::CR3 => {
                 println!("CR3: {:x}", value);
-                self.cr3 = value
+                self.memory.cr3 = value
             },
             Register::CR4 => {
                 println!("CR4: {:x}", value);
@@ -366,48 +291,27 @@ impl MachineState {
         }
     }
 
-    // stack operations
-    pub fn stack_push(&mut self, data: &[u8]) {
-        let rsp = self.rsp - data.len() as i64;
-        self.mem_write(rsp as u64, data);
-        self.rsp = rsp;
-    }
-
-    pub fn stack_pop(&mut self) -> i64 {
-        let rsp = self.rsp as u64;
-        let data = self.mem_read(rsp, 8);
-        self.rsp += 8;
-        *zero::read::<i64>(&data)
-    }
-
-    pub fn set_value(&mut self,
-                     value: i64,
-                     arg: &InstructionArgument,
-                     argument_size: ArgumentSize) {
+    pub fn set_value(&mut self, value: i64, arg: &Argument, argument_size: ArgumentSize) {
         match *arg {
-            InstructionArgument::Register { ref register } => {
+            Argument::Register { ref register } => {
                 self.set_register_value(register, value)
             }
-            InstructionArgument::EffectiveAddress { .. } => {
+            Argument::EffectiveAddress { .. } => {
                 let address = self.calculate_effective_address(arg);
-                let value8 = value as i8;
-                let value16 = value as i16;
-                let value32 = value as i32;
-                let vector = match argument_size {
-                    ArgumentSize::Bit8 => from(&value8),
-                    ArgumentSize::Bit16 => from(&value16),
-                    ArgumentSize::Bit32 => from(&value32),
-                    ArgumentSize::Bit64 => from(&value),
-                };
-                self.mem_write(address, &vector);
+                match argument_size {
+                    ArgumentSize::Bit8   => self.memory.write(address, &(value as i8)),
+                    ArgumentSize::Bit16 => self.memory.write(address, &(value as i16)),
+                    ArgumentSize::Bit32 => self.memory.write(address, &(value as i32)),
+                    ArgumentSize::Bit64 => self.memory.write(address, &(value as i64)),
+                }
             }
-            InstructionArgument::Immediate { .. } => panic!("Cannot set value on immediate value"),
+            Argument::Immediate { .. } => panic!("Cannot set value on immediate value"),
         }
     }
 
-    pub fn calculate_effective_address(&self, arg: &InstructionArgument) -> u64 {
+    pub fn calculate_effective_address(&self, arg: &Argument) -> u64 {
         match *arg {
-            InstructionArgument::EffectiveAddress { ref base, ref index, scale, displacement} => {
+            Argument::EffectiveAddress { ref base, ref index, scale, displacement} => {
                 let mut address = match *base {
                     Some(ref base) => self.get_register_value(&base),
                     None => 0,
@@ -424,43 +328,3 @@ impl MachineState {
     }
 }
 
-impl std::fmt::Display for MachineState {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f,
-               "rax            {:#x}\n\
-                rbx            {:#x}\n\
-                rcx            {:#x}\n\
-                rdx            {:#x}\n\
-                rsi            {:#x}\n\
-                rdi            {:#x}\n\
-                rbp            {:#x}\n\
-                rsp            {:#x}\n\
-                r8             {:#x}\n\
-                r9             {:#x}\n\
-                r10            {:#x}\n\
-                r11            {:#x}\n\
-                r12            {:#x}\n\
-                r13            {:#x}\n\
-                r14            {:#x}\n\
-                r15            {:#x}\n\
-                rip            {:#x}",
-               self.rax,
-               self.rbx,
-               self.rcx,
-               self.rdx,
-               self.rsi,
-               self.rdi,
-               self.rbp,
-               self.rsp,
-               self.r8,
-               self.r9,
-               self.r10,
-               self.r11,
-               self.r12,
-               self.r13,
-               self.r14,
-               self.r15,
-               self.rip,
-               )
-    }
-}

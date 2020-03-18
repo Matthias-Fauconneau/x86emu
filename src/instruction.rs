@@ -1,110 +1,25 @@
 use std::fmt;
 
-#[derive(Clone, Copy, Debug)]
-pub enum RegisterSize {
-    Bit8,
-    Bit16,
-    Bit32,
-    Bit64,
-    Segment,
-}
+#[derive(Clone, Copy, Debug)] pub enum RegisterSize { Bit8, Bit16, Bit32, Bit64, Segment }
 
 #[derive(Debug, Copy, Clone)]
 pub enum Register {
     // 64 Bit
-    RAX,
-    RBX,
-    RCX,
-    RDX,
-    RSP,
-    RBP,
-    RSI,
-    RDI,
-
-    R8,
-    R9,
-    R10,
-    R11,
-    R12,
-    R13,
-    R14,
-    R15,
-
+    RAX, RBX, RCX, RDX, RSP, RBP, RSI, RDI,
+    R8, R9, R10, R11, R12, R13, R14, R15,
     RIP,
-
-    CR0,
-    CR2,
-    CR3,
-    CR4,
-    CR8,
-
+    CR0, CR2, CR3, CR4, CR8,
     // 32 Bit
-    EAX,
-    EBX,
-    ECX,
-    EDX,
-    ESP,
-    EBP,
-    ESI,
-    EDI,
-
-    R8D,
-    R9D,
-    R10D,
-    R11D,
-    R12D,
-    R13D,
-    R14D,
-    R15D,
-
-    // 32 Bit
-    AX,
-    CX,
-    DX,
-    BX,
-    SP,
-    BP,
-    SI,
-    DI,
-    R8W,
-    R9W,
-    R10W,
-    R11W,
-    R12W,
-    R13W,
-    R14W,
-    R15W,
-
+    EAX, EBX, ECX, EDX, ESP, EBP, ESI, EDI,
+    R8D, R9D, R10D, R11D, R12D, R13D, R14D, R15D,
     // 16 Bit
-    AL,
-    CL,
-    DL,
-    BL,
-    AH,
-    CH,
-    DH,
-    BH,
-
-    SPL,
-    BPL,
-    SIL,
-    DIL,
-
-    R8B,
-    R9B,
-    R10B,
-    R11B,
-    R12B,
-    R13B,
-    R14B,
-    R15B,
-
-    ES,
-    CS,
-    SS,
-    DS,
-    FS,
-    GS,
+    AX, CX, DX, BX, SP, BP, SI, DI,
+    R8W, R9W, R10W, R11W, R12W, R13W, R14W, R15W,
+    // 8 Bit
+    AL, CL, DL, BL, AH, CH, DH, BH,
+    SPL, BPL, SIL, DIL,
+    R8B, R9B, R10B, R11B, R12B, R13B, R14B, R15B,
+    ES, CS, SS, DS, FS, GS,
 }
 
 pub enum Flags {
@@ -117,12 +32,7 @@ pub enum Flags {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub enum ArgumentSize {
-    Bit64,
-    Bit32,
-    Bit16,
-    Bit8,
-}
+pub enum ArgumentSize { Bit64, Bit32, Bit16, Bit8 }
 
 pub fn get_register_size(reg: &Register) -> ArgumentSize {
     match *reg {
@@ -159,7 +69,7 @@ impl fmt::Display for Register {
 }
 
 #[derive(Debug)]
-pub enum InstructionArgument {
+pub enum Argument {
     Immediate { immediate: i64 },
     Register { register: Register },
     EffectiveAddress {
@@ -170,11 +80,11 @@ pub enum InstructionArgument {
     },
 }
 
-impl InstructionArgument {
+impl Argument {
     pub fn format(&self, size: ArgumentSize) -> String {
         match *self {
-            InstructionArgument::Register {..} | InstructionArgument::EffectiveAddress {..} => format!("{}", self),
-            InstructionArgument::Immediate { immediate } => {
+            Argument::Register {..} | Argument::EffectiveAddress {..} => format!("{}", self),
+            Argument::Immediate { immediate } => {
                 format!("$0x{:x}", match size {
                     ArgumentSize::Bit8 => immediate as u8 as u64,
                     ArgumentSize::Bit16 => immediate as u16 as u64,
@@ -186,19 +96,19 @@ impl InstructionArgument {
     }
 }
 
-#[derive(Debug)]
-pub struct InstructionArguments {
-    pub first_argument: Option<InstructionArgument>,
-    pub second_argument: Option<InstructionArgument>,
-    pub third_argument: Option<InstructionArgument>,
+#[derive(Default,Debug)]
+pub struct Instruction {
+    pub first_argument: Option<Argument>,
+    pub second_argument: Option<Argument>,
+    pub third_argument: Option<Argument>,
     pub opcode: Option<u8>,
     pub explicit_size: Option<ArgumentSize>,
     pub repeat_equal: bool,
     pub repeat_not_equal: bool,
 }
 
-impl InstructionArguments {
-    pub fn get_one_argument(&self) -> &InstructionArgument {
+impl Instruction {
+    pub fn get_one_argument(&self) -> &Argument {
         let first_argument = match self.first_argument {
             Some(ref first_argument) => first_argument,
             None => panic!("Instructions needs one argument"),
@@ -210,7 +120,7 @@ impl InstructionArguments {
         first_argument
     }
 
-    pub fn get_two_arguments(&self) -> (&InstructionArgument, &InstructionArgument) {
+    pub fn get_two_arguments(&self) -> (&Argument, &Argument) {
         let first_argument = match self.first_argument {
             Some(ref first_argument) => first_argument,
             None => panic!("Instruction needs first_argument"),
@@ -231,13 +141,13 @@ impl InstructionArguments {
                         match self.first_argument {
                             Some(ref first_argument) => {
                                 match *first_argument {
-                                    InstructionArgument::Register { ref register } => {
+                                    Argument::Register { ref register } => {
                                         get_register_size(register)
                                     }
-                                    InstructionArgument::Immediate { .. } |
-                                    InstructionArgument::EffectiveAddress { .. } => {
+                                    Argument::Immediate { .. } |
+                                    Argument::EffectiveAddress { .. } => {
                                         match *second_argument {
-                                            InstructionArgument::Register { ref register } => {
+                                            Argument::Register { ref register } => {
                                                 get_register_size(register)
                                             }
                                             _ => panic!("Cannot determine instruction argument size"),
@@ -252,11 +162,11 @@ impl InstructionArguments {
                         match self.first_argument {
                             Some(ref first_argument) => {
                                 match *first_argument {
-                                    InstructionArgument::Register { ref register } => {
+                                    Argument::Register { ref register } => {
                                         get_register_size(register)
                                     }
-                                    InstructionArgument::Immediate { .. } => ArgumentSize::Bit64,
-                                    InstructionArgument::EffectiveAddress { .. } => ArgumentSize::Bit64,
+                                    Argument::Immediate { .. } => ArgumentSize::Bit64,
+                                    Argument::EffectiveAddress { .. } => ArgumentSize::Bit64,
                                 }
                             },
                             None => panic!("Instructions without arguments needs explicit_size set"),
@@ -268,18 +178,18 @@ impl InstructionArguments {
     }
 }
 
-pub struct InstructionArgumentsBuilder {
-    first_argument: Option<InstructionArgument>,
-    second_argument: Option<InstructionArgument>,
+pub struct InstructionBuilder {
+    first_argument: Option<Argument>,
+    second_argument: Option<Argument>,
     opcode: Option<u8>,
     explicit_size: Option<ArgumentSize>,
     repeat_equal: bool,
     repeat_not_equal: bool,
 }
 
-impl InstructionArgumentsBuilder {
-    pub fn new() -> InstructionArgumentsBuilder {
-        InstructionArgumentsBuilder {
+impl InstructionBuilder {
+    pub fn new() -> InstructionBuilder {
+        InstructionBuilder {
             first_argument: None,
             second_argument: None,
             opcode: None,
@@ -290,31 +200,31 @@ impl InstructionArgumentsBuilder {
     }
 
     pub fn first_argument(mut self,
-                           first_argument: InstructionArgument)
-                           -> InstructionArgumentsBuilder {
+                           first_argument: Argument)
+                           -> InstructionBuilder {
         self.first_argument = Some(first_argument);
         self
     }
 
     pub fn second_argument(mut self,
-                           second_argument: InstructionArgument)
-                           -> InstructionArgumentsBuilder {
+                           second_argument: Argument)
+                           -> InstructionBuilder {
         self.second_argument = Some(second_argument);
         self
     }
 
-    pub fn opcode(mut self, opcode: u8) -> InstructionArgumentsBuilder {
+    pub fn opcode(mut self, opcode: u8) -> InstructionBuilder {
         self.opcode = Some(opcode);
         self
     }
 
-    pub fn explicit_size(mut self, explicit_size: ArgumentSize) -> InstructionArgumentsBuilder {
+    pub fn explicit_size(mut self, explicit_size: ArgumentSize) -> InstructionBuilder {
         self.explicit_size = Some(explicit_size);
         self
     }
 
-    pub fn finalize(self) -> InstructionArguments {
-        InstructionArguments {
+    pub fn finalize(self) -> Instruction {
+        Instruction {
             first_argument: self.first_argument,
             second_argument: self.second_argument,
             third_argument: None,
@@ -325,14 +235,14 @@ impl InstructionArgumentsBuilder {
         }
     }
 
-    pub fn repeat(mut self, repeat_equal: bool, repeat_not_equal: bool) -> InstructionArgumentsBuilder {
+    pub fn repeat(mut self, repeat_equal: bool, repeat_not_equal: bool) -> InstructionBuilder {
         self.repeat_equal = repeat_equal;
         self.repeat_not_equal = repeat_not_equal;
         self
     }
 }
 
-impl fmt::Display for InstructionArguments {
+impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.second_argument {
             Some(ref second_argument) => {
@@ -351,12 +261,12 @@ impl fmt::Display for InstructionArguments {
     }
 }
 
-impl fmt::Display for InstructionArgument {
+impl fmt::Display for Argument {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            InstructionArgument::Register { ref register } => write!(f, "{}", register),
-            InstructionArgument::Immediate { immediate } => write!(f, "$0x{:x}", immediate),
-            InstructionArgument::EffectiveAddress { displacement, .. } => {
+            Argument::Register { ref register } => write!(f, "{}", register),
+            Argument::Immediate { immediate } => write!(f, "$0x{:x}", immediate),
+            Argument::EffectiveAddress { displacement, .. } => {
                 if displacement < 0 {
                     write!(f, "-{:#x}{}", displacement.abs(), format_effective_address(self))
                 } else if displacement > 0 {
@@ -369,9 +279,9 @@ impl fmt::Display for InstructionArgument {
     }
 }
 
-fn format_effective_address(arg: &InstructionArgument) -> String {
+fn format_effective_address(arg: &Argument) -> String {
     match *arg {
-        InstructionArgument::EffectiveAddress { ref base, ref index, scale, .. } => {
+        Argument::EffectiveAddress { ref base, ref index, scale, .. } => {
             match *index {
                 None => {
                     match *base {
@@ -391,13 +301,8 @@ fn format_effective_address(arg: &InstructionArgument) -> String {
     }
 }
 
-pub struct InstructionCache { // -> Instruction
-    pub instruction: Instruction,
-    pub arguments: Option<InstructionArguments>,
-    pub size: u64
-}
-
-pub enum Instruction { // -> Opcode
+#[derive(Clone,Copy)]
+pub enum Opcode {
     Adc,
     Add,
     And,
@@ -494,4 +399,20 @@ pub enum Instruction { // -> Opcode
     Setge,
     Setle,
     Setg,
+}
+
+pub fn print(instruction: &str) { println!("{:<6}", instruction); }
+pub fn print_no_size(instruction: &str, arg: &Instruction) { println!("{:<6} {}", instruction, arg); }
+pub fn print_(instruction: &str, arg: &Instruction) {
+    match arg.explicit_size {
+        Some(size) => {
+            match size {
+                ArgumentSize::Bit8 => println!("{:<6} {}", instruction.to_owned() + "b", arg),
+                ArgumentSize::Bit16 => println!("{:<6} {}", instruction.to_owned() + "w", arg),
+                ArgumentSize::Bit32 => println!("{:<6} {}", instruction.to_owned() + "l", arg),
+                ArgumentSize::Bit64 => println!("{:<6} {}", instruction.to_owned() + "q", arg),
+            }
+        },
+        None => println!("{:<6} {}", instruction, arg),
+    }
 }
