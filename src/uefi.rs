@@ -95,10 +95,10 @@ pub fn new_system_table<'boot, 'runtime>(stdin: &'boot Input, stdout: &'boot Out
         runtime: &runtime, boot: &boot, nr_cfg: 0, cfg_table:null()
 } }
 
-pub fn new_loaded_image() -> LoadedImage { LoadedImage{
+pub fn new_loaded_image(load_options: &[u16]) -> LoadedImage { LoadedImage{
     revision: 0, parent_handle: Handle(null_mut()), system_table: null(), device_handle: Handle(null_mut()),
     _file_path: null(), _reserved: null(),
-    load_options_size: 0, load_options: null(),
+    load_options_size: 0, load_options: load_options.as_ptr() as *const Char16,
     image_base: 0, image_size: 0,
     image_code_type: MemoryType::RESERVED,
     image_data_type: MemoryType::RESERVED,

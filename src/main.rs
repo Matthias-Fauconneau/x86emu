@@ -35,17 +35,38 @@ pub fn execute(state : &mut State, traps: &fnv::FnvHashMap<u64, Box<dyn Fn(&mut 
     }
 }
 
-pub fn stack_push_unaligned<T>(state: &mut State, value: &T) {
-    state.rsp -= std::mem::size_of::<T>() as i64;
-    state.memory.write_bytes(state.rsp as u64, raw(value).iter().copied());
+pub fn stack_push_bytes(state: &mut State, bytes: &[u8]) {
+    state.rsp -= bytes.len() as i64;
+    state.memory.write_bytes(state.rsp as u64, bytes.iter().copied());
 }
-fn cast_to_same_type_as_value<'t, T>(ptr : i64, _: T) -> &'t T { unsafe{&*(ptr as *const T)} }
+pub fn stack_push_unaligned<T>(state: &mut State, value: &T) {
+    stack_push_bytes(state, raw(value));
+}
+fn cast_slice<T,F>(from: &[F]) -> &[T] { unsafe{std::slice::from_raw_parts(from.as_ptr() as *const T, from.len() * std::mem::size_of::<F>() / std::mem::size_of::<T>())} }
+pub fn stack_push_slice<T>(state: &mut State, value: &[T]) {
+    stack_push_bytes(state, cast_slice(value));
+}
+
+fn cast_pointer_to_reference_to_same_type_as_value<'t, T>(ptr : i64, _: T) -> &'t T { unsafe{&*(ptr as *const T)} }
+
 // stack push value
 // \return stack reference
 // \note macro to avoid state borrow
 macro_rules! push { ($state:expr, $value:expr) => ({
     stack_push_unaligned(&mut $state, &$value);
-    $crate::cast_to_same_type_as_value($state.rsp, $value)
+    $crate::cast_pointer_to_reference_to_same_type_as_value($state.rsp, $value)
+})}
+
+fn cast_pointer_to_slice_of_same_type_and_len_as_slice<'t, T>(ptr : i64, slice: &[T]) -> &[T] {
+    unsafe{std::slice::from_raw_parts(ptr as *const T, slice.len())}
+}
+
+// stack push slice
+// \return stack reference
+// \note macro to avoid state borrow
+macro_rules! push_slice { ($state:expr, $slice:expr) => ({
+    stack_push_slice(&mut $state, $slice);
+    cast_pointer_to_slice_of_same_type_and_len_as_slice($state.rsp, $slice)
 })}
 
 mod uefi;
@@ -89,17 +110,19 @@ fn main() {
         traps.insert(state.memory.read(address_of(&stdout.output_string)), box |state|{
             let (_self, string) = (state.rcx, state.rdx); //EFI ABI = MS x64 = RCX, RDX, R8, R9
             let end = {let mut ptr = string; while state.memory.read_unaligned::<u16>(ptr as u64) != 0 { ptr += 2; } ptr};
+            let bytes = state.memory.read_bytes(string as u64, (end-string) as usize).collect::<Vec<u8>>();
             use std::io::Write;
-            // Assumes ASCII
-            std::io::stdout().write_all(&state.memory.read_bytes(string as u64, (end-string) as usize).step_by(2).collect::<Vec<u8>>()).unwrap();
+            std::io::stdout().write_all(String::from_utf16(&cast_slice(&bytes)).unwrap().as_bytes());
             state.rax = 0;
             interpreter::ret(state);
         });
 
-        let loaded_image = push!(state, new_loaded_image());
+        let load_options = "".encode_utf16().collect::<Vec<u16>>();
+        let load_options = push_slice!(state, &load_options);
+        let loaded_image = push!(state, new_loaded_image(load_options));
         traps.insert(state.memory.read(address_of(&boot_services.handle_protocol)), box move |state|{
             let (_self, protocol_guid, out_procotol) = (state.rcx, state.rdx, state.r8);
-            state.memory.write(out_procotol as u64, loaded_image);
+            state.memory.write(out_procotol as u64, &loaded_image);
             state.rax = 0;
             interpreter::ret(state);
         });

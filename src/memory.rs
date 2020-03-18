@@ -45,17 +45,17 @@ impl Memory {
     }
 
     fn read_aligned_physical(&self, physical_address: u64, size: usize) -> &[u8] {
-        assert!(is_aligned(physical_address, size), "read {:x} {}", physical_address, size);
-        let page = self.physical_to_host.get(&(physical_address/PAGE_SIZE)).expect(&format!("{:x} {}",physical_address, size));
+        assert!(is_aligned(physical_address, size), "unaligned read {:x} {}", physical_address, size);
+        let page = self.physical_to_host.get(&(physical_address/PAGE_SIZE)).expect(&format!("read {:x} {}",physical_address, size));
         let offset = (physical_address%PAGE_SIZE) as usize;
         &page[offset..offset+size]
     }
     fn read_aligned(&self, virtual_address: u64, size: usize) -> &[u8] { self.read_aligned_physical(self.translate(virtual_address), size) }
 
     pub fn write_aligned(&mut self, virtual_address: u64, value: &[u8]) {
-        assert!(is_aligned(virtual_address, value.len()), "write {:x} {}", virtual_address, value.len());
+        assert!(is_aligned(virtual_address, value.len()), "unaligned write {:x} {}", virtual_address, value.len());
         let physical_address = self.translate(virtual_address);
-        let page = self.physical_to_host.get_mut(&(physical_address/PAGE_SIZE)).expect(&format!("{:x} {}",physical_address, value.len()));
+        let page = self.physical_to_host.get_mut(&(physical_address/PAGE_SIZE)).expect(&format!("write {:x} {}",physical_address, value.len()));
         let offset = (physical_address%PAGE_SIZE) as usize;
         page[offset..offset+value.len()].copy_from_slice(value);
     }
