@@ -127,6 +127,13 @@ fn main() {
             interpreter::ret(state);
         });
 
+        traps.insert(state.memory.read(address_of(&boot_services.locate_handle)), box move |state|{
+            let (type_, guid, key, out_buffer_size, buffer) = (state.rcx, state.rdx, state.r8, state.r9, state.memory.read::<u64>(state.rsp as u64+8));
+            state.memory.write(out_buffer_size as u64, &1);
+            state.rax = 0;
+            interpreter::ret(state);
+        });
+
         state.rdx = address_of(system_table) as i64;
     }
     execute(&mut state, &traps);

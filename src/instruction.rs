@@ -1,7 +1,5 @@
 use std::fmt;
 
-#[derive(Clone, Copy, Debug)] pub enum RegisterSize { Bit8, Bit16, Bit32, Bit64, Segment }
-
 #[derive(Debug, Copy, Clone)]
 pub enum Register {
     // 64 Bit
@@ -31,8 +29,11 @@ pub enum Flags {
     Overflow = 1 << 11,
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum ArgumentSize { Bit64, Bit32, Bit16, Bit8 }
+#[derive(Debug)] pub enum Repeat { None, Equal, NotEqual }
+impl Default for Repeat { fn default() -> Repeat { Repeat::None } }
+
+#[derive(Clone, Copy, Debug)] pub enum RegisterSize { Bit8, Bit16, Bit32, Bit64, Segment }
+#[derive(Debug, Copy, Clone)] pub enum ArgumentSize { Bit64, Bit32, Bit16, Bit8 }
 
 pub fn get_register_size(reg: &Register) -> ArgumentSize {
     match *reg {
@@ -98,166 +99,36 @@ impl Argument {
 
 #[derive(Default,Debug)]
 pub struct Instruction {
-    pub first_argument: Option<Argument>,
-    pub second_argument: Option<Argument>,
-    pub third_argument: Option<Argument>,
+    pub arguments: (Option<Argument>, Option<Argument>, Option<Argument>),
     pub opcode: Option<u8>,
     pub explicit_size: Option<ArgumentSize>,
-    pub repeat_equal: bool,
-    pub repeat_not_equal: bool,
+    pub repeat: Repeat,
 }
 
 impl Instruction {
-    pub fn get_one_argument(&self) -> &Argument {
-        let first_argument = match self.first_argument {
-            Some(ref first_argument) => first_argument,
-            None => panic!("Instructions needs one argument"),
-        };
-        match self.second_argument {
-            Some(_) => panic!("Instruction accepts only one argument"),
-            None => (),
-        };
-        first_argument
-    }
-
-    pub fn get_two_arguments(&self) -> (&Argument, &Argument) {
-        let first_argument = match self.first_argument {
-            Some(ref first_argument) => first_argument,
-            None => panic!("Instruction needs first_argument"),
-        };
-        let second_argument = match self.second_argument {
-            Some(ref first_argument) => first_argument,
-            None => panic!("Instruction needs second_argument"),
-        };
-        (first_argument, second_argument)
-    }
+    //pub fn arg0(&self) -> &Argument { assert!(arguments.1.is_none()); arguments.0.unwrap() }
+    pub fn arg(&self) -> &Argument { assert!(self.arguments.1.is_none()); self.arguments.0.as_ref().unwrap() }
+    pub fn args(&self) -> (&Argument, &Argument) { (self.arguments.0.as_ref().unwrap(), self.arguments.1.as_ref().unwrap()) }
 
     pub fn size(&self) -> ArgumentSize {
-        match self.explicit_size {
-            Some(explicit_size) => explicit_size,
-            None => {
-                match self.second_argument {
-                    Some(ref second_argument) => {
-                        match self.first_argument {
-                            Some(ref first_argument) => {
-                                match *first_argument {
-                                    Argument::Register { ref register } => {
-                                        get_register_size(register)
-                                    }
-                                    Argument::Immediate { .. } |
-                                    Argument::EffectiveAddress { .. } => {
-                                        match *second_argument {
-                                            Argument::Register { ref register } => {
-                                                get_register_size(register)
-                                            }
-                                            _ => panic!("Cannot determine instruction argument size"),
-                                        }
-                                    }
-                                }
-                            },
-                            None => panic!("Instructions with second_argument also need a first_argument"),
-                        }
-                    },
-                    None => {
-                        match self.first_argument {
-                            Some(ref first_argument) => {
-                                match *first_argument {
-                                    Argument::Register { ref register } => {
-                                        get_register_size(register)
-                                    }
-                                    Argument::Immediate { .. } => ArgumentSize::Bit64,
-                                    Argument::EffectiveAddress { .. } => ArgumentSize::Bit64,
-                                }
-                            },
-                            None => panic!("Instructions without arguments needs explicit_size set"),
-                        }
-                    }
-                }
+        if let Some(explicit_size) = self.explicit_size { return explicit_size; }
+        match self.arguments.0.as_ref().unwrap() {
+            Argument::Register { ref register } => { get_register_size(register) }
+            Argument::Immediate { .. } | Argument::EffectiveAddress { .. } => {
+                if let Some(Argument::Register{ ref register }) = self.arguments.1 { return get_register_size(register); }
+                ArgumentSize::Bit64
             }
         }
     }
 }
 
-pub struct InstructionBuilder {
-    first_argument: Option<Argument>,
-    second_argument: Option<Argument>,
-    opcode: Option<u8>,
-    explicit_size: Option<ArgumentSize>,
-    repeat_equal: bool,
-    repeat_not_equal: bool,
-}
-
-impl InstructionBuilder {
-    pub fn new() -> InstructionBuilder {
-        InstructionBuilder {
-            first_argument: None,
-            second_argument: None,
-            opcode: None,
-            explicit_size: None,
-            repeat_equal: false,
-            repeat_not_equal: false,
-        }
-    }
-
-    pub fn first_argument(mut self,
-                           first_argument: Argument)
-                           -> InstructionBuilder {
-        self.first_argument = Some(first_argument);
-        self
-    }
-
-    pub fn second_argument(mut self,
-                           second_argument: Argument)
-                           -> InstructionBuilder {
-        self.second_argument = Some(second_argument);
-        self
-    }
-
-    pub fn opcode(mut self, opcode: u8) -> InstructionBuilder {
-        self.opcode = Some(opcode);
-        self
-    }
-
-    pub fn explicit_size(mut self, explicit_size: ArgumentSize) -> InstructionBuilder {
-        self.explicit_size = Some(explicit_size);
-        self
-    }
-
-    pub fn finalize(self) -> Instruction {
-        Instruction {
-            first_argument: self.first_argument,
-            second_argument: self.second_argument,
-            third_argument: None,
-            opcode: self.opcode,
-            explicit_size: self.explicit_size,
-            repeat_equal: self.repeat_equal,
-            repeat_not_equal: self.repeat_not_equal,
-        }
-    }
-
-    pub fn repeat(mut self, repeat_equal: bool, repeat_not_equal: bool) -> InstructionBuilder {
-        self.repeat_equal = repeat_equal;
-        self.repeat_not_equal = repeat_not_equal;
-        self
-    }
-}
-
 impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.second_argument {
-            Some(ref second_argument) => {
-                match self.first_argument {
-                    Some(ref first_argument) => write!(f, "{},{}", first_argument.format(self.size()), second_argument.format(self.size())),
-                    None => panic!("Instructions with second_argument also need a first_argument"),
-                }
-            },
-            None => {
-                match self.first_argument {
-                    Some(ref first_argument) => write!(f, "{}", first_argument.format(self.size())),
-                    None =>  write!(f, ""),
-                }
-            },
+        if let Some(arg0) = &self.arguments.0 {
+            write!(f, "{}", arg0.format(self.size()));
+            if let Some(arg1) = &self.arguments.1 { write!(f, ",{}", arg1.format(self.size())); }
         }
+        Ok(())
     }
 }
 

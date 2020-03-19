@@ -1,15 +1,15 @@
-use crate::instruction::{self, Argument, Instruction, Register, Flags, ArgumentSize, get_register_size};
+use crate::instruction::{self, Argument, Instruction, Register, Flags, Repeat, ArgumentSize, get_register_size};
 use crate::state::State;
 
 impl State {
 pub fn print(&self, instruction: &str) { if self.print_instructions { instruction::print(instruction); } }
-pub fn print_no_size(&self, instruction: &str, arg: &Instruction) { if self.print_instructions { instruction::print_no_size(instruction, arg) } }
-pub fn print_(&self, instruction: &str, arg: &Instruction) { if self.print_instructions { instruction::print_(instruction, arg) } }
+pub fn print_no_size(&self, instruction: &str, op: &Instruction) { if self.print_instructions { instruction::print_no_size(instruction, op) } }
+pub fn print_(&self, instruction: &str, op: &Instruction) { if self.print_instructions { instruction::print_(instruction, op) } }
 }
 
-fn jmp_iml(state: &mut State, arg: &Instruction) {
-    let first_argument = arg.get_one_argument();
-    let value = state.get_value(&first_argument, arg.size());
+fn jmp_iml(state: &mut State, op: &Instruction) {
+    let first_argument = op.arg();
+    let value = state.get_value(&first_argument, op.size());
     match *first_argument {
         Argument::Register { .. } => state.rip = value,
         Argument::Immediate { .. } => state.rip += value,
@@ -17,81 +17,81 @@ fn jmp_iml(state: &mut State, arg: &Instruction) {
     }
 }
 
-fn mov_(state: &mut State, arg: &Instruction) {
-    let argument_size = arg.size();
-    let (first_argument, second_argument) = arg.get_two_arguments();
+fn mov_(state: &mut State, op: &Instruction) {
+    let argument_size = op.size();
+    let (first_argument, second_argument) = op.args();
     let value = state.get_value(&first_argument, argument_size);
     state.set_value(value, second_argument, argument_size);
 }
 
 // different instructions with same opcode
-pub fn arithmetic(state: &mut State, arg: &Instruction) {
-    let opcode = match arg.opcode {
+pub fn arithmetic(state: &mut State, op: &Instruction) {
+    let opcode = match op.opcode {
         Some(opcode) => opcode,
         None => panic!("Unsupported argument type for arithmetic"),
     };
     match opcode {
-        0 => add(state, arg),
-        1 => or(state, arg),
-        2 => adc(state, arg),
-        3 => sbb(state, arg),
-        4 => and(state, arg),
-        5 => sub(state, arg),
-        6 => xor(state, arg),
-        7 => cmp(state, arg),
+        0 => add(state, op),
+        1 => or(state, op),
+        2 => adc(state, op),
+        3 => sbb(state, op),
+        4 => and(state, op),
+        5 => sub(state, op),
+        6 => xor(state, op),
+        7 => cmp(state, op),
         _ => unreachable!(),
     }
 }
 
-pub fn register_operation(state: &mut State, arg: &Instruction) {
-    let opcode = match arg.opcode {
+pub fn register_operation(state: &mut State, op: &Instruction) {
+    let opcode = match op.opcode {
         Some(opcode) => opcode,
         None => panic!("Unsupported argument type for register_operation"),
     };
     match opcode {
-        0 => inc(state, arg),
-        1 => dec(state, arg),
-        2 => call(state, arg),
-        3 => call(state, arg), // far call
-        4 => jmp(state, arg),
-        5 => jmp(state, arg), // far jmp
-        6 => push(state, arg),
+        0 => inc(state, op),
+        1 => dec(state, op),
+        2 => call(state, op),
+        3 => call(state, op), // far call
+        4 => jmp(state, op),
+        5 => jmp(state, op), // far jmp
+        6 => push(state, op),
         _ => unreachable!(),
     }
 }
 
-pub fn compare_mul_operation(state: &mut State, arg: &Instruction) {
-    let opcode = match arg.opcode {
+pub fn compare_mul_operation(state: &mut State, op: &Instruction) {
+    let opcode = match op.opcode {
         Some(opcode) => opcode,
         None => panic!("Unsupported argument type for compare_mul_operation"),
     };
     match opcode {
-        0 => test(state, arg),
-        1 => test(state, arg),
-        2 => not(state, arg),
-        3 => neg(state, arg),
-        4 => mul(state, arg),
-        5 => imul(state, arg),
-        6 => div(state, arg),
-        7 => idiv(state, arg),
+        0 => test(state, op),
+        1 => test(state, op),
+        2 => not(state, op),
+        3 => neg(state, op),
+        4 => mul(state, op),
+        5 => imul(state, op),
+        6 => div(state, op),
+        7 => idiv(state, op),
         _ => unreachable!(),
     }
 }
 
-pub fn shift_rotate(state: &mut State, arg: &Instruction) {
-    let opcode = match arg.opcode {
+pub fn shift_rotate(state: &mut State, op: &Instruction) {
+    let opcode = match op.opcode {
         Some(opcode) => opcode,
         None => panic!("Unsupported argument type for shift_rotate"),
     };
     match opcode {
-        0 => rol(state, arg),
-        1 => ror(state, arg),
-        2 => rcl(state, arg),
-        3 => rcr(state, arg),
-        4 => shl(state, arg),
-        5 => shr(state, arg),
-        6 => shl(state, arg), // sal and shl are the same
-        7 => sar(state, arg),
+        0 => rol(state, op),
+        1 => ror(state, op),
+        2 => rcl(state, op),
+        3 => rcr(state, op),
+        4 => shl(state, op),
+        5 => shr(state, op),
+        6 => shl(state, op), // sal and shl are the same
+        7 => sar(state, op),
         _ => unreachable!(),
     }
 }
@@ -109,45 +109,45 @@ pub fn stack_pop(state: &mut State) -> i64 {
 }
 
 // all other instructions
-pub fn push(state: &mut State, arg: &Instruction) {
-    state.print_("push", &arg);
-    let value = state.get_value(&arg.get_one_argument(), arg.size());
-    match arg.size() {
+pub fn push(state: &mut State, op: &Instruction) {
+    state.print_("push", &op);
+    let value = state.get_value(&op.arg(), op.size());
+    match op.size() {
         ArgumentSize::Bit32 => { stack_push(state, &(value as i32)) }
         ArgumentSize::Bit64 => { stack_push(state, &value) }
         _ => panic!("Unsupported push value size"),
     };
 }
 
-pub fn pop(state: &mut State, arg: &Instruction) {
-    state.print_("pop", &arg);
-    let first_argument = arg.get_one_argument();
+pub fn pop(state: &mut State, op: &Instruction) {
+    state.print_("pop", &op);
+    let first_argument = op.arg();
     let value = stack_pop(state);
-    state.set_value(value, &first_argument, arg.size());
+    state.set_value(value, &first_argument, op.size());
 }
 
-pub fn mov(state: &mut State, arg: &Instruction) {
-    state.print_("mov", &arg);
-    mov_(state, arg);
+pub fn mov(state: &mut State, op: &Instruction) {
+    state.print_("mov", &op);
+    mov_(state, op);
 }
 
-pub fn movsx(state: &mut State, arg: &Instruction) {
-    state.print_no_size("movsx", &arg);
+pub fn movsx(state: &mut State, op: &Instruction) {
+    state.print_no_size("movsx", &op);
     // normal mov already does the sign extension
-    mov_(state, arg);
+    mov_(state, op);
 }
 
-pub fn movzx(state: &mut State, arg: &Instruction) {
-    state.print_no_size("movzx", &arg);
-    let argument_size = arg.size();
-    let (first_argument, second_argument) = arg.get_two_arguments();
+pub fn movzx(state: &mut State, op: &Instruction) {
+    state.print_no_size("movzx", &op);
+    let argument_size = op.size();
+    let (first_argument, second_argument) = op.args();
     let value = state.get_value(&first_argument, argument_size);
     let first_argument_size = match *first_argument {
         Argument::Register {ref register} => {
             get_register_size(register)
         },
         Argument::EffectiveAddress {..} => {
-            match arg.explicit_size {
+            match op.explicit_size {
                 Some(explicit_size) => explicit_size,
                 None => panic!("movzx instruction needs explicit size when using an effective address"),
             }
@@ -166,26 +166,26 @@ pub fn movzx(state: &mut State, arg: &Instruction) {
     state.set_value(value as i64, second_argument, ArgumentSize::Bit64);
 }
 
-fn add_(state: &mut State, value1: i64, value2: i64, argument_size: ArgumentSize) -> i64 {
+fn add_(state: &mut State, value0: i64, value1: i64, argument_size: ArgumentSize) -> i64 {
     let (result, carry, overflow) = match argument_size {
         ArgumentSize::Bit8 => {
-            let (result, carry) = (value2 as u8).overflowing_add(value1 as u8);
-            let (_, overflow) = (value2 as i8).overflowing_add(value1 as i8);
+            let (result, carry) = (value1 as u8).overflowing_add(value0 as u8);
+            let (_, overflow) = (value1 as i8).overflowing_add(value0 as i8);
             (result as i64, carry, overflow)
         }
         ArgumentSize::Bit16 => {
-            let (result, carry) = (value2 as u16).overflowing_add(value1 as u16);
-            let (_, overflow) = (value2 as i16).overflowing_add(value1 as i16);
+            let (result, carry) = (value1 as u16).overflowing_add(value0 as u16);
+            let (_, overflow) = (value1 as i16).overflowing_add(value0 as i16);
             (result as i64, carry, overflow)
         }
         ArgumentSize::Bit32 => {
-            let (result, carry) = (value2 as u32).overflowing_add(value1 as u32);
-            let (_, overflow) = (value2 as i32).overflowing_add(value1 as i32);
+            let (result, carry) = (value1 as u32).overflowing_add(value0 as u32);
+            let (_, overflow) = (value1 as i32).overflowing_add(value0 as i32);
             (result as i64, carry, overflow)
         }
         ArgumentSize::Bit64 => {
-            let (result, carry) = (value2 as u64).overflowing_add(value1 as u64);
-            let (_, overflow) = (value2 as i64).overflowing_add(value1 as i64);
+            let (result, carry) = (value1 as u64).overflowing_add(value0 as u64);
+            let (_, overflow) = (value1 as i64).overflowing_add(value0 as i64);
             (result as i64, carry, overflow)
         }
     };
@@ -196,52 +196,52 @@ fn add_(state: &mut State, value1: i64, value2: i64, argument_size: ArgumentSize
     result
 }
 
-pub fn add(state: &mut State, arg: &Instruction) {
-    state.print_("add", &arg);
-    let argument_size = arg.size();
-    let (first_argument, second_argument) = arg.get_two_arguments();
-    let value1 = state.get_value(&first_argument, argument_size);
-    let value2 = state.get_value(&second_argument, argument_size);
-    let result = add_(state, value1, value2, argument_size);
+pub fn add(state: &mut State, op: &Instruction) {
+    state.print_("add", &op);
+    let argument_size = op.size();
+    let (first_argument, second_argument) = op.args();
+    let value0 = state.get_value(&first_argument, argument_size);
+    let value1 = state.get_value(&second_argument, argument_size);
+    let result = add_(state, value0, value1, argument_size);
     state.set_value(result, &second_argument, argument_size);
 }
 
-pub fn or(state: &mut State, arg: &Instruction) {
-    state.print_("or", &arg);
-    let argument_size = arg.size();
-    let (first_argument, second_argument) = arg.get_two_arguments();
-    let value1 = state.get_value(&first_argument, argument_size);
-    let value2 = state.get_value(&second_argument, argument_size);
-    let result = value1 | value2;
+pub fn or(state: &mut State, op: &Instruction) {
+    state.print_("or", &op);
+    let argument_size = op.size();
+    let (first_argument, second_argument) = op.args();
+    let value0 = state.get_value(&first_argument, argument_size);
+    let value1 = state.get_value(&second_argument, argument_size);
+    let result = value0 | value1;
     state.compute_flags(result, argument_size);
     state.set_value(result, &second_argument, argument_size);
 }
 
-pub fn adc(state: &mut State, arg: &Instruction) {
-    state.print_("adc", &arg);
-    panic!("Not emented");
+pub fn adc(state: &mut State, op: &Instruction) {
+    state.print_("adc", &op);
+    panic!("adc");
 }
 
-fn sub__(state: &mut State, value1: i64, value2: i64, argument_size: ArgumentSize) -> i64 {
+fn sub__(state: &mut State, value0: i64, value1: i64, argument_size: ArgumentSize) -> i64 {
     let (result, carry, overflow) = match argument_size {
         ArgumentSize::Bit8 => {
-            let (result, carry) = (value2 as u8).overflowing_sub(value1 as u8);
-            let (_, overflow) = (value2 as i8).overflowing_sub(value1 as i8);
+            let (result, carry) = (value1 as u8).overflowing_sub(value0 as u8);
+            let (_, overflow) = (value1 as i8).overflowing_sub(value0 as i8);
             (result as i64, carry, overflow)
         }
         ArgumentSize::Bit16 => {
-            let (result, carry) = (value2 as u16).overflowing_sub(value1 as u16);
-            let (_, overflow) = (value2 as i16).overflowing_sub(value1 as i16);
+            let (result, carry) = (value1 as u16).overflowing_sub(value0 as u16);
+            let (_, overflow) = (value1 as i16).overflowing_sub(value0 as i16);
             (result as i64, carry, overflow)
         }
         ArgumentSize::Bit32 => {
-            let (result, carry) = (value2 as u32).overflowing_sub(value1 as u32);
-            let (_, overflow) = (value2 as i32).overflowing_sub(value1 as i32);
+            let (result, carry) = (value1 as u32).overflowing_sub(value0 as u32);
+            let (_, overflow) = (value1 as i32).overflowing_sub(value0 as i32);
             (result as i64, carry, overflow)
         }
         ArgumentSize::Bit64 => {
-            let (result, carry) = (value2 as u64).overflowing_sub(value1 as u64);
-            let (_, overflow) = (value2 as i64).overflowing_sub(value1 as i64);
+            let (result, carry) = (value1 as u64).overflowing_sub(value0 as u64);
+            let (_, overflow) = (value1 as i64).overflowing_sub(value0 as i64);
             (result as i64, carry, overflow)
         }
     };
@@ -251,29 +251,29 @@ fn sub__(state: &mut State, value1: i64, value2: i64, argument_size: ArgumentSiz
     result
 }
 
-fn sub_(state: &mut State, arg: &Instruction, set: bool) {
-    let argument_size = arg.size();
-    let (first_argument, second_argument) = arg.get_two_arguments();
-    let value1 = state.get_value(&first_argument, argument_size);
-    let value2 = state.get_value(&second_argument, argument_size);
-    let result = sub__(state, value1, value2, argument_size);
+fn sub_(state: &mut State, op: &Instruction, set: bool) {
+    let argument_size = op.size();
+    let (first_argument, second_argument) = op.args();
+    let value0 = state.get_value(&first_argument, argument_size);
+    let value1 = state.get_value(&second_argument, argument_size);
+    let result = sub__(state, value0, value1, argument_size);
     if set {
         state.set_value(result, &second_argument, argument_size);
     }
 }
 
-pub fn sbb(state: &mut State, arg: &Instruction) {
-    state.print_("sbb", &arg);
-    sub_(state, arg, true);
-    // TODO: SBB emented without carry
+pub fn sbb(state: &mut State, op: &Instruction) {
+    state.print_("sbb", &op);
+    sub_(state, op, true);
+    // TODO: SBB without carry
 }
 
-fn and_(state: &mut State, arg: &Instruction, set: bool) {
-    let argument_size = arg.size();
-    let (first_argument, second_argument) = arg.get_two_arguments();
-    let value1 = state.get_value(&first_argument, argument_size);
-    let value2 = state.get_value(&second_argument, argument_size);
-    let result = value1 & value2;
+fn and_(state: &mut State, op: &Instruction, set: bool) {
+    let argument_size = op.size();
+    let (first_argument, second_argument) = op.args();
+    let value0 = state.get_value(&first_argument, argument_size);
+    let value1 = state.get_value(&second_argument, argument_size);
+    let result = value0 & value1;
     state.compute_flags(result, argument_size);
     state.set_flag(Flags::Carry, false);
     state.set_flag(Flags::Overflow, false);
@@ -282,43 +282,43 @@ fn and_(state: &mut State, arg: &Instruction, set: bool) {
     }
 }
 
-pub fn and(state: &mut State, arg: &Instruction) {
-    state.print_("and", &arg);
-    and_(state, arg, true);
+pub fn and(state: &mut State, op: &Instruction) {
+    state.print_("and", &op);
+    and_(state, op, true);
 }
 
-pub fn sub(state: &mut State, arg: &Instruction) {
-    state.print_("sub", &arg);
-    sub_(state, arg, true);
+pub fn sub(state: &mut State, op: &Instruction) {
+    state.print_("sub", &op);
+    sub_(state, op, true);
 }
 
-pub fn xor(state: &mut State, arg: &Instruction) {
-    state.print_("xor", &arg);
-    let argument_size = arg.size();
-    let (first_argument, second_argument) = arg.get_two_arguments();
-    let value1 = state.get_value(&first_argument, argument_size);
-    let value2 = state.get_value(&second_argument, argument_size);
-    let result = value1 ^ value2;
+pub fn xor(state: &mut State, op: &Instruction) {
+    state.print_("xor", &op);
+    let argument_size = op.size();
+    let (first_argument, second_argument) = op.args();
+    let value0 = state.get_value(&first_argument, argument_size);
+    let value1 = state.get_value(&second_argument, argument_size);
+    let result = value0 ^ value1;
     state.compute_flags(result, argument_size);
     state.set_value(result, &second_argument, argument_size);
 }
 
-pub fn cmp(state: &mut State, arg: &Instruction) {
-    state.print_("cmp", &arg);
-    sub_(state, arg, false);
+pub fn cmp(state: &mut State, op: &Instruction) {
+    state.print_("cmp", &op);
+    sub_(state, op, false);
 }
 
-pub fn call(state: &mut State, arg: &Instruction) {
-    state.print_("call", &arg);
+pub fn call(state: &mut State, op: &Instruction) {
+    state.print_("call", &op);
     let value = state.rip;
     stack_push(state, &value);
-    jmp_iml(state, arg);
+    jmp_iml(state, op);
 }
 
-pub fn lea(state: &mut State, arg: &Instruction) {
-    state.print_("lea", &arg);
-    let (first_argument, second_argument) = arg.get_two_arguments();
-    let argument_size = arg.size();
+pub fn lea(state: &mut State, op: &Instruction) {
+    state.print_("lea", &op);
+    let (first_argument, second_argument) = op.args();
+    let argument_size = op.size();
     match *first_argument {
         Argument::EffectiveAddress { .. } => {
             let value = state.calculate_effective_address(&first_argument) as i64;
@@ -333,164 +333,164 @@ pub fn lea(state: &mut State, arg: &Instruction) {
     }
 }
 
-pub fn test(state: &mut State, arg: &Instruction) {
-    state.print_("test", &arg);
-    // TODO:  test not fully emented
-    and_(state, arg, false);
+pub fn test(state: &mut State, op: &Instruction) {
+    state.print_("test", &op);
+    // TODO:  test not fully implemented
+    and_(state, op, false);
 }
 
-pub fn cmovo(state: &mut State, arg: &Instruction) {
-    state.print_("cmovo", &arg);
+pub fn cmovo(state: &mut State, op: &Instruction) {
+    state.print_("cmovo", &op);
     if state.get_flag(Flags::Overflow) {
-        mov_(state, arg);
+        mov_(state, op);
     }
 }
 
-pub fn cmovno(state: &mut State, arg: &Instruction) {
-    state.print_("cmovno", &arg);
+pub fn cmovno(state: &mut State, op: &Instruction) {
+    state.print_("cmovno", &op);
     if !state.get_flag(Flags::Overflow) {
-        mov_(state, arg);
+        mov_(state, op);
     }
 }
 
-pub fn cmovb(state: &mut State, arg: &Instruction) {
-    state.print_("cmovb", &arg);
+pub fn cmovb(state: &mut State, op: &Instruction) {
+    state.print_("cmovb", &op);
     if state.get_flag(Flags::Carry) {
-        mov_(state, arg);
+        mov_(state, op);
     }
 }
 
-pub fn cmovae(state: &mut State, arg: &Instruction) {
-    state.print_("cmovae", &arg);
+pub fn cmovae(state: &mut State, op: &Instruction) {
+    state.print_("cmovae", &op);
     if !state.get_flag(Flags::Carry) {
-        mov_(state, arg);
+        mov_(state, op);
     }
 }
 
-pub fn cmove(state: &mut State, arg: &Instruction) {
-    state.print_("cmove", &arg);
+pub fn cmove(state: &mut State, op: &Instruction) {
+    state.print_("cmove", &op);
     if state.get_flag(Flags::Zero) {
-        mov_(state, arg);
+        mov_(state, op);
     }
 }
 
-pub fn cmovne(state: &mut State, arg: &Instruction) {
-    state.print_("cmovne", &arg);
+pub fn cmovne(state: &mut State, op: &Instruction) {
+    state.print_("cmovne", &op);
     if !state.get_flag(Flags::Zero) {
-        mov_(state, arg);
+        mov_(state, op);
     }
 }
 
-pub fn cmovbe(state: &mut State, arg: &Instruction) {
-    state.print_("cmovbe", &arg);
+pub fn cmovbe(state: &mut State, op: &Instruction) {
+    state.print_("cmovbe", &op);
     if state.get_flag(Flags::Carry) || state.get_flag(Flags::Zero) {
-        mov_(state, arg);
+        mov_(state, op);
     }
 }
 
-pub fn cmova(state: &mut State, arg: &Instruction) {
-    state.print_("cmova", &arg);
+pub fn cmova(state: &mut State, op: &Instruction) {
+    state.print_("cmova", &op);
     if !state.get_flag(Flags::Carry) && !state.get_flag(Flags::Zero) {
-        mov_(state, arg);
+        mov_(state, op);
     }
 }
 
-pub fn cmovs(state: &mut State, arg: &Instruction) {
-    state.print_("cmovs", &arg);
+pub fn cmovs(state: &mut State, op: &Instruction) {
+    state.print_("cmovs", &op);
     if state.get_flag(Flags::Sign) {
-        mov_(state, arg);
+        mov_(state, op);
     }
 }
 
-pub fn cmovns(state: &mut State, arg: &Instruction) {
-    state.print_("cmovns", &arg);
+pub fn cmovns(state: &mut State, op: &Instruction) {
+    state.print_("cmovns", &op);
     if !state.get_flag(Flags::Sign) {
-        mov_(state, arg);
+        mov_(state, op);
     }
 }
 
-pub fn cmovp(state: &mut State, arg: &Instruction) {
-    state.print_("cmovp", &arg);
+pub fn cmovp(state: &mut State, op: &Instruction) {
+    state.print_("cmovp", &op);
     if state.get_flag(Flags::Parity) {
-        mov_(state, arg);
+        mov_(state, op);
     }
 }
 
-pub fn cmovnp(state: &mut State, arg: &Instruction) {
-    state.print_("cmovnp", &arg);
+pub fn cmovnp(state: &mut State, op: &Instruction) {
+    state.print_("cmovnp", &op);
     if !state.get_flag(Flags::Parity) {
-        mov_(state, arg);
+        mov_(state, op);
     }
 }
 
-pub fn cmovl(state: &mut State, arg: &Instruction) {
-    state.print_("cmovl", &arg);
+pub fn cmovl(state: &mut State, op: &Instruction) {
+    state.print_("cmovl", &op);
     if state.get_flag(Flags::Sign) != state.get_flag(Flags::Overflow){
-        mov_(state, arg);
+        mov_(state, op);
     }
 }
 
-pub fn cmovge(state: &mut State, arg: &Instruction) {
-    state.print_("cmovge", &arg);
+pub fn cmovge(state: &mut State, op: &Instruction) {
+    state.print_("cmovge", &op);
     if state.get_flag(Flags::Sign) == state.get_flag(Flags::Overflow){
-        mov_(state, arg);
+        mov_(state, op);
     }
 }
 
-pub fn cmovle(state: &mut State, arg: &Instruction) {
-    state.print_("cmovle", &arg);
+pub fn cmovle(state: &mut State, op: &Instruction) {
+    state.print_("cmovle", &op);
     if state.get_flag(Flags::Zero) ||
             (state.get_flag(Flags::Sign) != state.get_flag(Flags::Overflow)) {
-        mov_(state, arg);
+        mov_(state, op);
     }
 }
 
-pub fn cmovg(state: &mut State, arg: &Instruction) {
-    state.print_("cmovg", &arg);
+pub fn cmovg(state: &mut State, op: &Instruction) {
+    state.print_("cmovg", &op);
     if !state.get_flag(Flags::Zero) &&
             (state.get_flag(Flags::Sign) == state.get_flag(Flags::Overflow)) {
-        mov_(state, arg);
+        mov_(state, op);
     }
 }
 
-pub fn rol(state: &mut State, arg: &Instruction) {
-    state.print_("rol", &arg);
-    panic!("Not emented");
+pub fn rol(state: &mut State, op: &Instruction) {
+    state.print_("rol", &op);
+    panic!("rol");
 }
 
-pub fn ror(state: &mut State, arg: &Instruction) {
-    state.print_("rol", &arg);
-    panic!("Not emented");
+pub fn ror(state: &mut State, op: &Instruction) {
+    state.print_("rol", &op);
+    panic!("rol");
 }
 
-pub fn rcl(state: &mut State, arg: &Instruction) {
-    state.print_("rcl", &arg);
-    panic!("Not emented");
+pub fn rcl(state: &mut State, op: &Instruction) {
+    state.print_("rcl", &op);
+    panic!("rcl");
 }
 
-pub fn rcr(state: &mut State, arg: &Instruction) {
-    state.print_("rcr", &arg);
-    panic!("Not emented");
+pub fn rcr(state: &mut State, op: &Instruction) {
+    state.print_("rcr", &op);
+    panic!("rcr");
 }
 
-pub fn shl(state: &mut State, arg: &Instruction) {
-    state.print_("shl", &arg);
-    let argument_size = arg.size();
-    let (first_argument, second_argument) = arg.get_two_arguments();
-    let mut value1 = state.get_value(&first_argument, argument_size);
-    let value2 = state.get_value(&second_argument, argument_size);
+pub fn shl(state: &mut State, op: &Instruction) {
+    state.print_("shl", &op);
+    let argument_size = op.size();
+    let (first_argument, second_argument) = op.args();
+    let mut value0 = state.get_value(&first_argument, argument_size);
+    let value1 = state.get_value(&second_argument, argument_size);
 
     let (result, carry, overflow) = match argument_size {
         ArgumentSize::Bit8 => {
-            value1 = value1 % 0x20;
-            if value1 > 8 {
+            value0 = value0 % 0x20;
+            if value0 > 8 {
                 (0, false, false)
-            } else if value1 == 8 {
-                (0, value2 & 1 == 1, false)
+            } else if value0 == 8 {
+                (0, value1 & 1 == 1, false)
             } else {
-                let result = (value2 as u8) << (value1 as u32);
-                let bit_position = 8 - value1;
-                let (carry, _) = (value2 as u8).overflowing_shr(bit_position as u32);
+                let result = (value1 as u8) << (value0 as u32);
+                let bit_position = 8 - value0;
+                let (carry, _) = (value1 as u8).overflowing_shr(bit_position as u32);
                 let carry = carry & 1 == 1;
                 // overflow = most significant bit of result == carry
                 let overflow = ((result & 0x80) >> 7 == 1) != carry;
@@ -498,15 +498,15 @@ pub fn shl(state: &mut State, arg: &Instruction) {
             }
         }
         ArgumentSize::Bit16 => {
-            value1 = value1 % 0x20;
-            if value1 > 16 {
+            value0 = value0 % 0x20;
+            if value0 > 16 {
                 (0, false, false)
-            } else if value1 == 16 {
-                (0, value2 & 1 == 1, false)
+            } else if value0 == 16 {
+                (0, value1 & 1 == 1, false)
             } else {
-                let result = (value2 as u16) << (value1 as u32);
-                let bit_position = 16 - value1;
-                let (carry, _) = (value2 as u16).overflowing_shr(bit_position as u32);
+                let result = (value1 as u16) << (value0 as u32);
+                let bit_position = 16 - value0;
+                let (carry, _) = (value1 as u16).overflowing_shr(bit_position as u32);
                 let carry = carry & 1 == 1;
                 // overflow = most significant bit of result == carry
                 let overflow = ((result & 0x8000) >> 15 == 1) != carry;
@@ -514,15 +514,15 @@ pub fn shl(state: &mut State, arg: &Instruction) {
             }
         }
         ArgumentSize::Bit32 => {
-            value1 = value1 % 0x20;
-            if value1 > 32 {
+            value0 = value0 % 0x20;
+            if value0 > 32 {
                 (0, false, false)
-            } else if value1 == 32 {
-                (0, value2 & 1 == 1, false)
+            } else if value0 == 32 {
+                (0, value1 & 1 == 1, false)
             } else {
-                let result = (value2 as u32) << (value1 as u32);
-                let bit_position = 32 - value1;
-                let (carry, _) = (value2 as u32).overflowing_shr(bit_position as u32);
+                let result = (value1 as u32) << (value0 as u32);
+                let bit_position = 32 - value0;
+                let (carry, _) = (value1 as u32).overflowing_shr(bit_position as u32);
                 let carry = carry & 1 == 1;
                 // overflow = most significant bit of result == carry
                 let overflow = ((result & 0x80000000) >> 31 == 1) != carry;
@@ -530,14 +530,14 @@ pub fn shl(state: &mut State, arg: &Instruction) {
             }
         }
         ArgumentSize::Bit64 => {
-            if value1 > 64 {
+            if value0 > 64 {
                 (0, false, false)
-            } else if value1 == 64 {
-                (0, value2 & 1 == 1, false)
+            } else if value0 == 64 {
+                (0, value1 & 1 == 1, false)
             } else {
-                let result = (value2 as u64) << (value1 as u32);
-                let bit_position = 64 - value1;
-                let (carry, _) = (value2 as u64).overflowing_shr(bit_position as u32);
+                let result = (value1 as u64) << (value0 as u32);
+                let bit_position = 64 - value0;
+                let (carry, _) = (value1 as u64).overflowing_shr(bit_position as u32);
                 let carry = carry & 1 == 1;
                 // overflow = most significant bit of result == carry
                 let overflow = ((result & 0x8000000000000000) >> 63 == 1) != carry;
@@ -546,162 +546,162 @@ pub fn shl(state: &mut State, arg: &Instruction) {
         }
     };
 
-    if value1 == 1 {
+    if value0 == 1 {
         state.set_flag(Flags::Overflow, overflow);
     }
-    if value1 != 0 {
+    if value0 != 0 {
         state.set_flag(Flags::Carry, carry);
         state.compute_flags(result, argument_size);
     }
     state.set_value(result, &second_argument, argument_size);
 }
 
-pub fn shr(state: &mut State, arg: &Instruction) {
-    state.print_("shr", &arg);
-    let argument_size = arg.size();
-    let (first_argument, second_argument) = arg.get_two_arguments();
-    let mut value1 = state.get_value(&first_argument, argument_size);
-    let value2 = state.get_value(&second_argument, argument_size);
+pub fn shr(state: &mut State, op: &Instruction) {
+    state.print_("shr", &op);
+    let argument_size = op.size();
+    let (first_argument, second_argument) = op.args();
+    let mut value0 = state.get_value(&first_argument, argument_size);
+    let value1 = state.get_value(&second_argument, argument_size);
 
     let (result, carry, overflow) = match argument_size {
         ArgumentSize::Bit8 => {
-            value1 = value1 % 0x20;
-            if value1 > 8 {
+            value0 = value0 % 0x20;
+            if value0 > 8 {
                 (0, false, false)
-            } else if value1 == 8 {
-                (0, value2 & 0x80 == 0x80, false)
+            } else if value0 == 8 {
+                (0, value1 & 0x80 == 0x80, false)
             } else {
-                let result = (value2 as u8) >> (value1 as u32);
-                let (carry, _) = (value2 as u8).overflowing_shr((value1 - 1) as u32);
+                let result = (value1 as u8) >> (value0 as u32);
+                let (carry, _) = (value1 as u8).overflowing_shr((value0 - 1) as u32);
                 let carry = carry & 1 == 1;
-                (result as i64, carry, value2 & 0x80 == 0x80)
+                (result as i64, carry, value1 & 0x80 == 0x80)
             }
         }
         ArgumentSize::Bit16 => {
-            value1 = value1 % 0x20;
-            if value1 > 16 {
+            value0 = value0 % 0x20;
+            if value0 > 16 {
                 (0, false, false)
-            } else if value1 == 16 {
-                (0, value2 & 0x8000 == 0x8000, false)
+            } else if value0 == 16 {
+                (0, value1 & 0x8000 == 0x8000, false)
             } else {
-                let result = (value2 as u16) >> (value1 as u32);
-                let (carry, _) = (value2 as u16).overflowing_shr((value1 - 1) as u32);
+                let result = (value1 as u16) >> (value0 as u32);
+                let (carry, _) = (value1 as u16).overflowing_shr((value0 - 1) as u32);
                 let carry = carry & 1 == 1;
-                (result as i64, carry, value2 & 0x8000 == 0x8000)
+                (result as i64, carry, value1 & 0x8000 == 0x8000)
             }
         }
         ArgumentSize::Bit32 => {
-            value1 = value1 % 0x20;
-            if value1 > 32 {
+            value0 = value0 % 0x20;
+            if value0 > 32 {
                 (0, false, false)
-            } else if value1 == 32 {
-                (0, value2 & 0x80000000 == 0x80000000, false)
+            } else if value0 == 32 {
+                (0, value1 & 0x80000000 == 0x80000000, false)
             } else {
-                let result = (value2 as u32) >> (value1 as u32);
-                let (carry, _) = (value2 as u32).overflowing_shr((value1 - 1) as u32);
+                let result = (value1 as u32) >> (value0 as u32);
+                let (carry, _) = (value1 as u32).overflowing_shr((value0 - 1) as u32);
                 let carry = carry & 1 == 1;
-                (result as i64, carry, value2 & 0x80000000 == 0x80000000)
+                (result as i64, carry, value1 & 0x80000000 == 0x80000000)
             }
         }
         ArgumentSize::Bit64 => {
-            if value1 > 64 {
+            if value0 > 64 {
                 (0, false, false)
-            } else if value1 == 64 {
-                (0, value2 as u64 & 0x8000000000000000 == 0x8000000000000000, false)
+            } else if value0 == 64 {
+                (0, value1 as u64 & 0x8000000000000000 == 0x8000000000000000, false)
             } else {
-                let result = (value2 as u64) >> (value1 as u32);
-                let (carry, _) = (value2 as u64).overflowing_shr((value1 - 1) as u32);
+                let result = (value1 as u64) >> (value0 as u32);
+                let (carry, _) = (value1 as u64).overflowing_shr((value0 - 1) as u32);
                 let carry = carry & 1 == 1;
-                (result as i64, carry, value2 as u64 & 0x8000000000000000 == 0x8000000000000000)
+                (result as i64, carry, value1 as u64 & 0x8000000000000000 == 0x8000000000000000)
             }
         }
     };
 
-    if value1 == 1 {
+    if value0 == 1 {
         state.set_flag(Flags::Overflow, overflow);
     }
-    if value1 != 0 {
+    if value0 != 0 {
         state.set_flag(Flags::Carry, carry);
         state.compute_flags(result, argument_size);
     }
     state.set_value(result, &second_argument, argument_size);
 }
 
-pub fn sar(state: &mut State, arg: &Instruction) {
-    state.print_("sar", &arg);
-    let argument_size = arg.size();
-    let (first_argument, second_argument) = arg.get_two_arguments();
-    let mut value1 = state.get_value(&first_argument, argument_size);
-    let value2 = state.get_value(&second_argument, argument_size);
+pub fn sar(state: &mut State, op: &Instruction) {
+    state.print_("sar", &op);
+    let argument_size = op.size();
+    let args = op.args();
+    let mut value0 = state.get_value(args.0, argument_size);
+    let value1 = state.get_value(args.1, argument_size);
 
     let (result, carry) = match argument_size {
         ArgumentSize::Bit8 => {
-            value1 = value1 % 0x20;
-            if value1 > 8 {
+            value0 = value0 % 0x20;
+            if value0 > 8 {
                 (0, false)
-            } else if value1 == 8 {
-                (0, value2 & 0x80 == 0x80)
+            } else if value0 == 8 {
+                (0, value1 & 0x80 == 0x80)
             } else {
-                let result = (value2 as i8) >> (value1 as u32);
-                let (carry, _) = (value2 as u8).overflowing_shr((value1 - 1) as u32);
+                let result = (value1 as i8) >> (value0 as u32);
+                let (carry, _) = (value1 as u8).overflowing_shr((value0 - 1) as u32);
                 let carry = carry & 1 == 1;
                 (result as i64, carry)
             }
         }
         ArgumentSize::Bit16 => {
-            value1 = value1 % 0x20;
-            if value1 > 16 {
+            value0 = value0 % 0x20;
+            if value0 > 16 {
                 (0, false)
-            } else if value1 == 16 {
-                (0, value2 & 0x8000 == 0x8000)
+            } else if value0 == 16 {
+                (0, value1 & 0x8000 == 0x8000)
             } else {
-                let result = (value2 as i16) >> (value1 as u32);
-                let (carry, _) = (value2 as u16).overflowing_shr((value1 - 1) as u32);
+                let result = (value1 as i16) >> (value0 as u32);
+                let (carry, _) = (value1 as u16).overflowing_shr((value0 - 1) as u32);
                 let carry = carry & 1 == 1;
                 (result as i64, carry)
             }
         }
         ArgumentSize::Bit32 => {
-            value1 = value1 % 0x20;
-            if value1 > 32 {
+            value0 = value0 % 0x20;
+            if value0 > 32 {
                 (0, false)
-            } else if value1 == 32 {
-                (0, value2 & 0x80000000 == 0x80000000)
+            } else if value0 == 32 {
+                (0, value1 & 0x80000000 == 0x80000000)
             } else {
-                let result = (value2 as i32) >> (value1 as u32);
-                let (carry, _) = (value2 as u32).overflowing_shr((value1 - 1) as u32);
+                let result = (value1 as i32) >> (value0 as u32);
+                let (carry, _) = (value1 as u32).overflowing_shr((value0 - 1) as u32);
                 let carry = carry & 1 == 1;
                 (result as i64, carry,)
             }
         }
         ArgumentSize::Bit64 => {
-            if value1 > 64 {
+            if value0 > 64 {
                 (0, false)
-            } else if value1 == 64 {
-                (0, value2 as u64 & 0x8000000000000000 == 0x8000000000000000)
+            } else if value0 == 64 {
+                (0, value1 as u64 & 0x8000000000000000 == 0x8000000000000000)
             } else {
-                let result = (value2 as i64) >> (value1 as u32);
-                let (carry, _) = (value2 as u64).overflowing_shr((value1 - 1) as u32);
+                let result = (value1 as i64) >> (value0 as u32);
+                let (carry, _) = (value1 as u64).overflowing_shr((value0 - 1) as u32);
                 let carry = carry & 1 == 1;
                 (result as i64, carry)
             }
         }
     };
 
-    if value1 == 1 {
+    if value0 == 1 {
         state.set_flag(Flags::Overflow, false);
     }
-    if value1 != 0 {
+    if value0 != 0 {
         state.set_flag(Flags::Carry, carry);
         state.compute_flags(result, argument_size);
     }
-    state.set_value(result, &second_argument, argument_size);
+    state.set_value(result, &args.1, argument_size);
 }
 
-pub fn inc(state: &mut State, arg: &Instruction) {
-    state.print_("inc", &arg);
-    let first_argument = arg.get_one_argument();
-    let argument_size = arg.size();
+pub fn inc(state: &mut State, op: &Instruction) {
+    state.print_("inc", &op);
+    let first_argument = op.arg();
+    let argument_size = op.size();
     let value = state.get_value(&first_argument, argument_size);
     let carry = state.get_flag(Flags::Carry);
     let result = add_(state, value, 1, argument_size);
@@ -709,10 +709,10 @@ pub fn inc(state: &mut State, arg: &Instruction) {
     state.set_flag(Flags::Carry, carry);
 }
 
-pub fn dec(state: &mut State, arg: &Instruction) {
-    state.print_("dec", &arg);
-    let first_argument = arg.get_one_argument();
-    let argument_size = arg.size();
+pub fn dec(state: &mut State, op: &Instruction) {
+    state.print_("dec", &op);
+    let first_argument = op.arg();
+    let argument_size = op.size();
     let value = state.get_value(&first_argument, argument_size);
     let carry = state.get_flag(Flags::Carry);
     let result = sub__(state, 1, value, argument_size);
@@ -720,10 +720,10 @@ pub fn dec(state: &mut State, arg: &Instruction) {
     state.set_flag(Flags::Carry, carry);
 }
 
-pub fn div(state: &mut State, arg: &Instruction) {
-    state.print_("div", &arg);
-    let argument_size = arg.size();
-    let divisor = arg.get_one_argument();
+pub fn div(state: &mut State, op: &Instruction) {
+    state.print_("div", &op);
+    let argument_size = op.size();
+    let divisor = op.arg();
     let divisor = state.get_value(&divisor, argument_size);
 
     let (reg_lower, reg_upper) = match argument_size {
@@ -745,49 +745,64 @@ pub fn div(state: &mut State, arg: &Instruction) {
     // todo: set flags (including floating point error flags)
 }
 
-pub fn idiv(state: &mut State, arg: &Instruction) {
-    state.print_("idiv", &arg);
-    panic!("Not emented");
+pub fn idiv(state: &mut State, op: &Instruction) {
+    state.print_("idiv", &op);
+    panic!("idiv");
 }
 
-pub fn mul(state: &mut State, arg: &Instruction) {
-    state.print_("mul", &arg);
-    panic!("Not emented");
+pub fn mul(state: &mut State, op: &Instruction) {
+    state.print_("mul", &op);
+    println!("mul");
+    let argument_size = op.size();
+    let a = match argument_size {
+        ArgumentSize::Bit8 => Register::AL,
+        ArgumentSize::Bit16 => Register::AX,
+        ArgumentSize::Bit32 => Register::EAX,
+        ArgumentSize::Bit64 => Register::RAX,
+    };
+    let source0 = state.get_register_value(&a) as u64;
+    let source1 = state.get_value(&op.arg(), argument_size) as u64;
+    let result = source0 as u128 * source1 as u128;
+    state.compute_flags(result as i64, argument_size);
+    state.set_value(result as i64, &Argument::Register{ register: a }, argument_size);
+    match argument_size {
+        ArgumentSize::Bit8 => {},
+        ArgumentSize::Bit16 => state.set_value((result>>16) as i64, &Argument::Register{ register: Register::DX }, argument_size),
+        ArgumentSize::Bit32 => state.set_value((result>>32) as i64, &Argument::Register{ register: Register::EDX }, argument_size),
+        ArgumentSize::Bit64 => state.set_value((result>>64) as i64, &Argument::Register{ register: Register::RDX }, argument_size),
+    };
+    // TODO: mul does not set carry/overflow flag
 }
 
-pub fn imul(state: &mut State, arg: &Instruction) {
-    state.print_("imul", &arg);
-    // TODO: ement one argument version
-    let argument_size = arg.size();
-    let (first_argument, second_argument) = arg.get_two_arguments();
-    let value1 = state.get_value(&first_argument, argument_size);
-    let value2 = state.get_value(&second_argument, argument_size);
-    let result = value2 * value1;
+pub fn imul(state: &mut State, op: &Instruction) {
+    state.print_("imul", &op);
+    // TODO: implement one argument version
+    let argument_size = op.size();
+    let args = op.args();
+    let source0 = state.get_value(&args.0, argument_size);
+    let source1 = state.get_value(&args.1, argument_size);
+    let result = source0 * source1;
     state.compute_flags(result, argument_size);
-    match arg.third_argument {
-        Some(ref third_argument) => {
-            state.set_value(result, third_argument, argument_size);
-        },
-        None => {
-            state.set_value(result, &second_argument, argument_size);
-        }
+    match op.arguments.2 {
+        Some(ref target) => state.set_value(result, target, argument_size),
+        None => state.set_value(result, &args.1, argument_size),
     }
     // TODO:  imul does not set carry/overflow flag
 }
 
-pub fn not(state: &mut State, arg: &Instruction) {
-    state.print_("not", &arg);
-    let first_argument = arg.get_one_argument();
-    let argument_size = arg.size();
+pub fn not(state: &mut State, op: &Instruction) {
+    state.print_("not", &op);
+    let first_argument = op.arg();
+    let argument_size = op.size();
     let value = state.get_value(&first_argument, argument_size);
     let result = !value;
     state.set_value(result, &first_argument, argument_size);
 }
 
-pub fn neg(state: &mut State, arg: &Instruction) {
-    state.print_("neg", &arg);
-    let first_argument = arg.get_one_argument();
-    let argument_size = arg.size();
+pub fn neg(state: &mut State, op: &Instruction) {
+    state.print_("neg", &op);
+    let first_argument = op.arg();
+    let argument_size = op.size();
     let value = state.get_value(&first_argument, argument_size);
     let result = sub__(state, value, 0, argument_size);
     state.set_value(result, &first_argument, argument_size);
@@ -832,252 +847,209 @@ pub fn cld(state: &mut State) {
     state.set_flag(Flags::Direction, false);
 }
 
-pub fn stos(state: &mut State, arg: &Instruction) {
-    let to =
-        state.get_value(&Argument::Register { register: Register::RDI },
-                                ArgumentSize::Bit64);
-    if arg.repeat_equal {
-        let length =
-            state.get_value(&Argument::Register { register: Register::RCX },
-                                    ArgumentSize::Bit64);
-        let length = match arg.explicit_size.unwrap() {
-            ArgumentSize::Bit8 => {
-                state.print("rep stos %al,%es:(%rdi)");
-                length
-            },
-            ArgumentSize::Bit16 => {
-                state.print("rep stos %ax,%es:(%rdi)");
-                length * 2
-            },
-            ArgumentSize::Bit32 => {
-                state.print("rep stos %eax,%es:(%rdi)");
-                length * 4
-            },
-            ArgumentSize::Bit64 => {
-                state.print("rep stos %rax,%es:(%rdi)");
-                length * 8
-            },
-        };
-
-        if state.get_flag(Flags::Direction) {
-            panic!("stos NOOP");
-        } else {
-            // TODO: actually do something
-            state.set_register_value(&Register::RDI, to + length);
-            state.set_register_value(&Register::RCX, 0);
-        }
-    } else {
-        state.print("stos %ds:(%rsi),%es:(%rdi)");
-        panic!("stos NOOP");
-        // TODO:  stos: NOOP
+fn repeat<F:Fn(&mut State)>(state: &mut State, op: &Instruction, f: F) {
+    match op.repeat {
+        Repeat::None => f(state),
+        Repeat::Equal => loop {
+            let rcx = state.get_value(&Argument::Register { register: Register::RCX }, ArgumentSize::Bit64);
+            if rcx == 0 { break; }
+            f(state);
+            if state.get_flag(Flags::Zero) { break; }
+            state.set_register_value(&Register::RCX, rcx - 1);
+        },
+        _ => unimplemented!(),
     }
 }
 
-pub fn movs(state: &mut State, arg: &Instruction) {
-    if arg.repeat_equal { state.print("repe"); }
+pub fn stos(state: &mut State, op: &Instruction) {
+    repeat(state, op, |state| {
+        let to = state.get_value(&Argument::Register { register: Register::RDI }, ArgumentSize::Bit64);
+        let length = match op.explicit_size.unwrap() {
+            ArgumentSize::Bit8 => {
+                state.print("rep stos %al,%es:(%rdi)");
+                1
+            },
+            ArgumentSize::Bit16 => {
+                state.print("rep stos %ax,%es:(%rdi)");
+                2
+            },
+            ArgumentSize::Bit32 => {
+                state.print("rep stos %eax,%es:(%rdi)");
+                4
+            },
+            ArgumentSize::Bit64 => {
+                state.print("rep stos %rax,%es:(%rdi)");
+                8
+            },
+        };
+
+        unimplemented!();
+        /*let update = if state.get_flag(Flags::Direction) { -size } else { +size };
+        state.set_register_value(&Register::RDI, (to + update) as i64);*/
+    })
+}
+
+pub fn movs(state: &mut State, op: &Instruction) {
+    //if op.repeat  { state.print("repe"); }
     state.print("movs %ds:(%rsi),%es:(%rdi)");
     let movs = |state:&mut State| {
         let from = state.get_value(&Argument::Register { register: Register::RSI }, ArgumentSize::Bit64) as u64;
         let to = state.get_value(&Argument::Register { register: Register::RDI }, ArgumentSize::Bit64) as u64;
-        let size = match arg.explicit_size.expect("movs need an explicit_size") {
+        let size = match op.explicit_size.expect("movs need an explicit_size") {
             ArgumentSize::Bit64 => {state.memory.write(to, &state.memory.read::<u64>(from)); 8},
             ArgumentSize::Bit32 => {state.memory.write(to, &state.memory.read::<u32>(from)); 4},
             ArgumentSize::Bit16 => {state.memory.write(to, &state.memory.read::<u16>(from)); 2},
             ArgumentSize::Bit8 =>   {state.memory.write(to, &state.memory.read::<u8  >(from)); 1},
         };
-        if state.get_flag(Flags::Direction) {
-            state.set_register_value(&Register::RSI, (from - size) as i64);
-            state.set_register_value(&Register::RDI, (to - size) as i64);
-        } else {
-            state.set_register_value(&Register::RSI, (from + size) as i64);
-            state.set_register_value(&Register::RDI, (to + size) as i64);
-        }
+        let update = if state.get_flag(Flags::Direction) { -size as i64 } else { size };
+        state.set_register_value(&Register::RSI, from as i64 + update);
+        state.set_register_value(&Register::RDI, to as i64 + update);
     };
-    if arg.repeat_equal {
-        loop {
-            let rcx = state.get_value(&Argument::Register { register: Register::RCX }, ArgumentSize::Bit64);
-            if rcx == 0 { break; }
-            movs(state);
-            state.set_register_value(&Register::RCX, rcx - 1);
+}
+
+pub fn scas(state: &mut State, op: &Instruction) {
+    state.print_("scas", &op);
+    repeat(state, op, |state: &mut State| {
+        let argument_size = op.size();
+        match argument_size {
+            ArgumentSize::Bit8 => (),
+            _ => panic!("scas: only 8bit values supported")
         }
-    } else {
-        movs(state);
-    }
+        let (source_arg, needle) = op.args();
+        let source = state.get_value(&source_arg, argument_size);
+        let needle = state.get_value(&needle, argument_size);
+        sub__(state, source, needle, argument_size);
+        state.set_register_value(&Register::RDI, state.get_register_value(&Register::RDI) + if state.get_flag(Flags::Direction) { -1 } else { 1 } );
+    })
 }
 
-fn scas_step(state: &mut State, source: i64, needle: i64, argument_size: ArgumentSize) {
-    sub__(state, source, needle, argument_size);
-
-    let mut source_address = state.get_register_value(&Register::RDI);
-    if state.get_flag(Flags::Direction) {
-        source_address -= 1;
-    } else {
-        source_address += 1;
-    }
-    state.set_register_value(&Register::RDI, source_address);
+pub fn jmp(state: &mut State, op: &Instruction) {
+    state.print_("jmp", &op);
+    jmp_iml(state, op);
 }
 
-pub fn scas(state: &mut State, arg: &Instruction) {
-    state.print_("scas", &arg);
-    let argument_size = arg.size();
-    match argument_size {
-        ArgumentSize::Bit8 => (),
-        _ => panic!("scas: only 8bit values supported")
-    }
-    let (source_arg, needle) = arg.get_two_arguments();
-    let mut source = state.get_value(&source_arg, argument_size);
-    let needle = state.get_value(&needle, argument_size);
-
-    if arg.repeat_not_equal {
-        let mut i = state.get_register_value(&Register::RCX) as u64;
-        loop {
-            if i == 0 {
-                break;
-            }
-            i -= 1;
-            scas_step(state, source, needle, argument_size);
-
-            if state.get_flag(Flags::Zero) {
-                break;
-            }
-
-            source = state.get_value(&source_arg, argument_size);
-        }
-        state.set_register_value(&Register::RCX, i as i64);
-    } else if arg.repeat_equal {
-        panic!("repe scas not supported");
-    } else {
-        scas_step(state, source, needle, argument_size);
-    }
-}
-
-pub fn jmp(state: &mut State, arg: &Instruction) {
-    state.print_("jmp", &arg);
-    jmp_iml(state, arg);
-}
-
-pub fn jo(state: &mut State, arg: &Instruction) {
-    state.print_("jo", &arg);
+pub fn jo(state: &mut State, op: &Instruction) {
+    state.print_("jo", &op);
     if state.get_flag(Flags::Overflow) {
-        jmp_iml(state, arg);
+        jmp_iml(state, op);
     }
 }
 
-pub fn jno(state: &mut State, arg: &Instruction) {
-    state.print_("jno", &arg);
+pub fn jno(state: &mut State, op: &Instruction) {
+    state.print_("jno", &op);
     if !state.get_flag(Flags::Overflow) {
-        jmp_iml(state, arg);
+        jmp_iml(state, op);
     }
 }
 
-pub fn jb(state: &mut State, arg: &Instruction) {
-    state.print_("jb", &arg);
+pub fn jb(state: &mut State, op: &Instruction) {
+    state.print_("jb", &op);
     if state.get_flag(Flags::Carry) {
-        jmp_iml(state, arg);
+        jmp_iml(state, op);
     }
 }
 
-pub fn jae(state: &mut State, arg: &Instruction) {
-    state.print_("jae", &arg);
+pub fn jae(state: &mut State, op: &Instruction) {
+    state.print_("jae", &op);
     if !state.get_flag(Flags::Carry) {
-        jmp_iml(state, arg);
+        jmp_iml(state, op);
     }
 }
 
-pub fn je(state: &mut State, arg: &Instruction) {
-    state.print_("je", &arg);
+pub fn je(state: &mut State, op: &Instruction) {
+    state.print_("je", &op);
     if state.get_flag(Flags::Zero) {
-        jmp_iml(state, arg);
+        jmp_iml(state, op);
     }
 }
 
-pub fn jne(state: &mut State, arg: &Instruction) {
-    state.print_("jne", &arg);
+pub fn jne(state: &mut State, op: &Instruction) {
+    state.print_("jne", &op);
     if !state.get_flag(Flags::Zero) {
-        jmp_iml(state, arg);
+        jmp_iml(state, op);
     }
 }
 
-pub fn jbe(state: &mut State, arg: &Instruction) {
-    state.print_("jbe", &arg);
+pub fn jbe(state: &mut State, op: &Instruction) {
+    state.print_("jbe", &op);
     // CF=1 OR ZF=1
     if state.get_flag(Flags::Carry) || state.get_flag(Flags::Zero) {
-        jmp_iml(state, arg);
+        jmp_iml(state, op);
     }
 }
 
-pub fn ja(state: &mut State, arg: &Instruction) {
-    state.print_("ja", &arg);
+pub fn ja(state: &mut State, op: &Instruction) {
+    state.print_("ja", &op);
     // CF=0 AND ZF=0
     if !state.get_flag(Flags::Carry) && !state.get_flag(Flags::Zero) {
-        jmp_iml(state, arg);
+        jmp_iml(state, op);
     }
 }
 
-pub fn js(state: &mut State, arg: &Instruction) {
-    state.print_("js", &arg);
+pub fn js(state: &mut State, op: &Instruction) {
+    state.print_("js", &op);
     if state.get_flag(Flags::Sign) {
-        jmp_iml(state, arg);
+        jmp_iml(state, op);
     }
 }
 
-pub fn jns(state: &mut State, arg: &Instruction) {
-    state.print_("jns", &arg);
+pub fn jns(state: &mut State, op: &Instruction) {
+    state.print_("jns", &op);
     if !state.get_flag(Flags::Sign) {
-        jmp_iml(state, arg);
+        jmp_iml(state, op);
     }
 }
 
-pub fn jp(state: &mut State, arg: &Instruction) {
-    state.print_("jp", &arg);
+pub fn jp(state: &mut State, op: &Instruction) {
+    state.print_("jp", &op);
     if state.get_flag(Flags::Parity) {
-        jmp_iml(state, arg);
+        jmp_iml(state, op);
     }
 }
 
-pub fn jnp(state: &mut State, arg: &Instruction) {
-    state.print_("jnp", &arg);
+pub fn jnp(state: &mut State, op: &Instruction) {
+    state.print_("jnp", &op);
     if !state.get_flag(Flags::Parity) {
-        jmp_iml(state, arg);
+        jmp_iml(state, op);
     }
 }
 
-pub fn jl(state: &mut State, arg: &Instruction) {
+pub fn jl(state: &mut State, op: &Instruction) {
     // SF!=OF
-    state.print_("jl", &arg);
+    state.print_("jl", &op);
     if state.get_flag(Flags::Sign) != state.get_flag(Flags::Overflow){
-        jmp_iml(state, arg);
+        jmp_iml(state, op);
     }
 }
 
-pub fn jge(state: &mut State, arg: &Instruction) {
+pub fn jge(state: &mut State, op: &Instruction) {
     // SF=OF
-    state.print_("jge", &arg);
+    state.print_("jge", &op);
     if state.get_flag(Flags::Sign) == state.get_flag(Flags::Overflow){
-        jmp_iml(state, arg);
+        jmp_iml(state, op);
     }
 }
 
-pub fn jle(state: &mut State, arg: &Instruction) {
+pub fn jle(state: &mut State, op: &Instruction) {
     // (ZF=1) OR (SF!=OF)
-    state.print_("jle", &arg);
+    state.print_("jle", &op);
     if state.get_flag(Flags::Zero) ||
             (state.get_flag(Flags::Sign) != state.get_flag(Flags::Overflow)) {
-        jmp_iml(state, arg);
+        jmp_iml(state, op);
     }
 }
 
-pub fn jg(state: &mut State, arg: &Instruction) {
+pub fn jg(state: &mut State, op: &Instruction) {
     // (ZF=0) AND (SF=OF)
-    state.print_("jg", &arg);
+    state.print_("jg", &op);
     if !state.get_flag(Flags::Zero) &&
             (state.get_flag(Flags::Sign) == state.get_flag(Flags::Overflow)) {
-        jmp_iml(state, arg);
+        jmp_iml(state, op);
     }
 }
 
-fn set_byte(state: &mut State, arg: &Instruction, set: bool) {
-    let first_argument = arg.get_one_argument();
+fn set_byte(state: &mut State, op: &Instruction, set: bool) {
+    let first_argument = op.arg();
     if set {
         state.set_value(1, &first_argument, ArgumentSize::Bit8);
     } else {
@@ -1085,102 +1057,102 @@ fn set_byte(state: &mut State, arg: &Instruction, set: bool) {
     }
 }
 
-pub fn seto(state: &mut State, arg: &Instruction) {
-    state.print_("seto", &arg);
+pub fn seto(state: &mut State, op: &Instruction) {
+    state.print_("seto", &op);
     let set = state.get_flag(Flags::Overflow);
-    set_byte(state, arg, set);
+    set_byte(state, op, set);
 }
 
-pub fn setno(state: &mut State, arg: &Instruction) {
-    state.print_("setno", &arg);
+pub fn setno(state: &mut State, op: &Instruction) {
+    state.print_("setno", &op);
     let set = !state.get_flag(Flags::Overflow);
-    set_byte(state, arg, set);
+    set_byte(state, op, set);
 }
 
-pub fn setb(state: &mut State, arg: &Instruction) {
-    state.print_("setb", &arg);
+pub fn setb(state: &mut State, op: &Instruction) {
+    state.print_("setb", &op);
     let set = state.get_flag(Flags::Carry);
-    set_byte(state, arg, set);
+    set_byte(state, op, set);
 }
 
-pub fn setae(state: &mut State, arg: &Instruction) {
-    state.print_("setae", &arg);
+pub fn setae(state: &mut State, op: &Instruction) {
+    state.print_("setae", &op);
     let set = !state.get_flag(Flags::Carry);
-    set_byte(state, arg, set);
+    set_byte(state, op, set);
 }
 
-pub fn sete(state: &mut State, arg: &Instruction) {
-    state.print_("sete", &arg);
+pub fn sete(state: &mut State, op: &Instruction) {
+    state.print_("sete", &op);
     let set = state.get_flag(Flags::Zero);
-    set_byte(state, arg, set);
+    set_byte(state, op, set);
 }
 
-pub fn setne(state: &mut State, arg: &Instruction) {
-    state.print_("setne", &arg);
+pub fn setne(state: &mut State, op: &Instruction) {
+    state.print_("setne", &op);
     let set = !state.get_flag(Flags::Zero);
-    set_byte(state, arg, set);
+    set_byte(state, op, set);
 }
 
-pub fn setbe(state: &mut State, arg: &Instruction) {
-    state.print_("setbe", &arg);
+pub fn setbe(state: &mut State, op: &Instruction) {
+    state.print_("setbe", &op);
     let set = state.get_flag(Flags::Carry) || state.get_flag(Flags::Zero);
-    set_byte(state, arg, set);
+    set_byte(state, op, set);
 }
 
-pub fn seta(state: &mut State, arg: &Instruction) {
-    state.print_("seta", &arg);
+pub fn seta(state: &mut State, op: &Instruction) {
+    state.print_("seta", &op);
     let set = !state.get_flag(Flags::Carry) && !state.get_flag(Flags::Zero);
-    set_byte(state, arg, set);
+    set_byte(state, op, set);
 }
 
-pub fn sets(state: &mut State, arg: &Instruction) {
-    state.print_("sets", &arg);
+pub fn sets(state: &mut State, op: &Instruction) {
+    state.print_("sets", &op);
     let set = state.get_flag(Flags::Sign);
-    set_byte(state, arg, set);
+    set_byte(state, op, set);
 }
 
-pub fn setns(state: &mut State, arg: &Instruction) {
-    state.print_("setns", &arg);
+pub fn setns(state: &mut State, op: &Instruction) {
+    state.print_("setns", &op);
     let set = !state.get_flag(Flags::Sign);
-    set_byte(state, arg, set);
+    set_byte(state, op, set);
 }
 
-pub fn setp(state: &mut State, arg: &Instruction) {
-    state.print_("setp", &arg);
+pub fn setp(state: &mut State, op: &Instruction) {
+    state.print_("setp", &op);
     let set = state.get_flag(Flags::Parity);
-    set_byte(state, arg, set);
+    set_byte(state, op, set);
 }
 
-pub fn setnp(state: &mut State, arg: &Instruction) {
-    state.print_("setnp", &arg);
+pub fn setnp(state: &mut State, op: &Instruction) {
+    state.print_("setnp", &op);
     let set = !state.get_flag(Flags::Parity);
-    set_byte(state, arg, set);
+    set_byte(state, op, set);
 }
 
-pub fn setl(state: &mut State, arg: &Instruction) {
-    state.print_("setl", &arg);
+pub fn setl(state: &mut State, op: &Instruction) {
+    state.print_("setl", &op);
     let set = state.get_flag(Flags::Sign) != state.get_flag(Flags::Overflow);
-    set_byte(state, arg, set);
+    set_byte(state, op, set);
 }
 
-pub fn setge(state: &mut State, arg: &Instruction) {
-    state.print_("setge", &arg);
+pub fn setge(state: &mut State, op: &Instruction) {
+    state.print_("setge", &op);
     let set = state.get_flag(Flags::Sign) == state.get_flag(Flags::Overflow);
-    set_byte(state, arg, set);
+    set_byte(state, op, set);
 }
 
-pub fn setle(state: &mut State, arg: &Instruction) {
-    state.print_("setle", &arg);
+pub fn setle(state: &mut State, op: &Instruction) {
+    state.print_("setle", &op);
     let set = state.get_flag(Flags::Zero) ||
             (state.get_flag(Flags::Sign) != state.get_flag(Flags::Overflow));
-    set_byte(state, arg, set);
+    set_byte(state, op, set);
 }
 
-pub fn setg(state: &mut State, arg: &Instruction) {
-    state.print_("setg", &arg);
+pub fn setg(state: &mut State, op: &Instruction) {
+    state.print_("setg", &op);
     let set = !state.get_flag(Flags::Zero) &&
             (state.get_flag(Flags::Sign) == state.get_flag(Flags::Overflow));
-    set_byte(state, arg, set);
+    set_byte(state, op, set);
 }
 
 pub fn out(state: &mut State) {
@@ -1211,23 +1183,23 @@ pub fn rdmsr(state: &mut State) {
     }
 }
 
-pub fn bit_manipulation(state: &mut State, arg: &Instruction) {
-    let opcode = match arg.opcode {
+pub fn bit_manipulation(state: &mut State, op: &Instruction) {
+    let opcode = match op.opcode {
         Some(opcode) => opcode,
         None => panic!("Unsupported argument type for arithmetic"),
     };
     match opcode {
-        4 => bt(state, arg),
-        5 => bts(state, arg),
-        6 => btr(state, arg),
-        7 => btc(state, arg),
+        4 => bt(state, op),
+        5 => bts(state, op),
+        6 => btr(state, op),
+        7 => btc(state, op),
         _ => panic!("Invalid opcode for bt instructions"),
     }
 }
 
 /// normalize bit_position,
 /// get current value of bit at bit_position (after normalization)
-fn bt_prepare(bit_position: i64, arg: i64, argument_size: ArgumentSize) -> (i64, bool) {
+fn bt_prepare(bit_position: i64, op: i64, argument_size: ArgumentSize) -> (i64, bool) {
     let bit_position = match argument_size {
         ArgumentSize::Bit8 => bit_position % 8,
         ArgumentSize::Bit16 => bit_position % 16,
@@ -1235,62 +1207,62 @@ fn bt_prepare(bit_position: i64, arg: i64, argument_size: ArgumentSize) -> (i64,
         ArgumentSize::Bit64 => bit_position % 64,
     };
 
-    let bit = ((arg >> bit_position) & 1) == 1;
+    let bit = ((op >> bit_position) & 1) == 1;
     (bit_position, bit)
 }
 
-pub fn bt(state: &mut State, arg: &Instruction) {
-    state.print_("bt", &arg);
-    let argument_size = arg.size();
-    let (first_argument, second_argument) = arg.get_two_arguments();
+pub fn bt(state: &mut State, op: &Instruction) {
+    state.print_("bt", &op);
+    let argument_size = op.size();
+    let (first_argument, second_argument) = op.args();
     let bit_position = state.get_value(&first_argument, argument_size);
-    let arg = state.get_value(&second_argument, argument_size);
-    let (_, bit) = bt_prepare(bit_position, arg, argument_size);
+    let op = state.get_value(&second_argument, argument_size);
+    let (_, bit) = bt_prepare(bit_position, op, argument_size);
     state.set_flag(Flags::Carry, bit);
 }
 
 // bit_manipulation: closure which takes the current bit value and modifies it depending on the instruciton
-fn btx_<F>(state: &mut State, arg: &Instruction, bit_manipulation: F)
+fn btx_<F>(state: &mut State, op: &Instruction, bit_manipulation: F)
     where F: FnOnce(bool) -> bool
 {
-    let argument_size = arg.size();
-    let (first_argument, second_argument) = arg.get_two_arguments();
+    let argument_size = op.size();
+    let (first_argument, second_argument) = op.args();
     let bit_position = state.get_value(&first_argument, argument_size);
-    let mut arg = state.get_value(&second_argument, argument_size);
+    let mut op = state.get_value(&second_argument, argument_size);
 
-    let (bit_position, bit) = bt_prepare(bit_position, arg, argument_size);
+    let (bit_position, bit) = bt_prepare(bit_position, op, argument_size);
 
     state.set_flag(Flags::Carry, bit);
 
     let bit = bit_manipulation(bit);
 
     if bit {
-        arg |= 1 << bit_position;
+        op |= 1 << bit_position;
     } else {
-        arg &= !(1 << bit_position);
+        op &= !(1 << bit_position);
     }
-    state.set_value(arg as i64, &second_argument, argument_size);
+    state.set_value(op as i64, &second_argument, argument_size);
 }
 
-pub fn bts(state: &mut State, arg: &Instruction) {
-    state.print_("bts", &arg);
-    btx_(state, arg, | _ | true);
+pub fn bts(state: &mut State, op: &Instruction) {
+    state.print_("bts", &op);
+    btx_(state, op, | _ | true);
 }
 
-pub fn btr(state: &mut State, arg: &Instruction) {
-    state.print_("btr", &arg);
-    btx_(state, arg, | _ | false);
+pub fn btr(state: &mut State, op: &Instruction) {
+    state.print_("btr", &op);
+    btx_(state, op, | _ | false);
 }
 
-pub fn btc(state: &mut State, arg: &Instruction) {
-    state.print_("btc", &arg);
-    btx_(state, arg, | b | !b);
+pub fn btc(state: &mut State, op: &Instruction) {
+    state.print_("btc", &op);
+    btx_(state, op, | b | !b);
 }
 
-pub fn cmpxchg(state: &mut State, arg: &Instruction) {
-    state.print_("cmpxchg", &arg);
-    let argument_size = arg.size();
-    let (first_argument, second_argument) = arg.get_two_arguments();
+pub fn cmpxchg(state: &mut State, op: &Instruction) {
+    state.print_("cmpxchg", &op);
+    let argument_size = op.size();
+    let (first_argument, second_argument) = op.args();
     let source = state.get_value(&first_argument, argument_size);
     let destination = state.get_value(&second_argument, argument_size);
 
@@ -1311,10 +1283,10 @@ pub fn cmpxchg(state: &mut State, arg: &Instruction) {
     }
 }
 
-pub fn xchg(state: &mut State, arg: &Instruction) {
-    state.print_("xchg", &arg);
-    let argument_size = arg.size();
-    let (first_argument, second_argument) = arg.get_two_arguments();
+pub fn xchg(state: &mut State, op: &Instruction) {
+    state.print_("xchg", &op);
+    let argument_size = op.size();
+    let (first_argument, second_argument) = op.args();
     let arg1 = state.get_value(&first_argument, argument_size);
     let arg2 = state.get_value(&second_argument, argument_size);
 
@@ -1337,15 +1309,15 @@ pub fn syscall(state: &mut State) {
     }
 }
 
-pub fn lgdt(state: &mut State, arg: &Instruction) {
-    state.print_no_size("lgdt", &arg);
-    let first_argument = arg.get_one_argument();
+pub fn lgdt(state: &mut State, op: &Instruction) {
+    state.print_no_size("lgdt", &op);
+    let first_argument = op.arg();
     state.gdt = state.get_value(first_argument, ArgumentSize::Bit64);
 }
 
-pub fn lidt(state: &mut State, arg: &Instruction) {
-    state.print_no_size("lidt", &arg);
-    let first_argument = arg.get_one_argument();
+pub fn lidt(state: &mut State, op: &Instruction) {
+    state.print_no_size("lidt", &op);
+    let first_argument = op.arg();
     state.idt = state.get_value(first_argument, ArgumentSize::Bit64);
 }
 
@@ -1447,7 +1419,7 @@ pub fn cpuid(state: &mut State) {
     }
 }
 
-pub fn int(state: &mut State, arg: &Instruction) {
+pub fn int(state: &mut State, op: &Instruction) {
     state.print("int    $0x80");
     unimplemented!();
 }

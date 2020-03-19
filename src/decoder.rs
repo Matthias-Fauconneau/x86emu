@@ -1,4 +1,4 @@
-use crate::{memory::Memory, instruction::{Register, RegisterSize, ArgumentSize, Opcode, Argument, Instruction, InstructionBuilder}};
+use crate::{memory::Memory, instruction::{Register, RegisterSize, ArgumentSize, Opcode, Repeat, Argument, Instruction}};
 
 #[derive(PartialEq)] enum RegOrOpcode { Register, Opcode, }
 #[derive(PartialEq)] enum ImmediateSize { None, Bit8, Bit32, }
@@ -11,11 +11,9 @@ bitflags! {
     }
 }
 bitflags! {
-    struct DecoderFlags: u64 {
+    struct Flags: u64 {
         const REVERSED_REGISTER_DIRECTION = 1 << 0;
         const ADDRESS_SIZE_OVERRIDE = 1 << 2;
-        const REPEAT_EQUAL = 1 << 3;
-        const REPEAT_NOT_EQUAL = 1 << 4;
         const NEW_64BIT_REGISTER = 1 << 5;
         const NEW_8BIT_REGISTER = 1 << 6;
         const MOD_R_M_EXTENSION = 1 << 7;
@@ -27,44 +25,33 @@ bitflags! {
 }
 
 pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
-    let mut decoder_flags = DecoderFlags { bits: 0 };
+    let mut flags = Flags { bits: 0 };
+    let mut repeat = Repeat::None;
     loop {
         match memory.read_byte(*rip as u64) {
-            0xF0 => {
-                // todo: do not ignore lock/bound prefix
-            }
-            0xF2 => {
-                decoder_flags |= DecoderFlags::REPEAT_NOT_EQUAL;
-            }
-            0xF3 => {
-                decoder_flags |= DecoderFlags::REPEAT_EQUAL;
-            }
-            0x2E | 0x3E | 0x36 | 0x26 | 0x64 | 0x65 => {
-                //TODO: do not ignore segment prefix (or probably we should?)
-            }
-            0x66 => {
-                decoder_flags |= DecoderFlags::OPERAND_16_BIT;
-            }
-            0x67 => {
-                decoder_flags |= DecoderFlags::ADDRESS_SIZE_OVERRIDE;
-            }
+            0xF0 => { /* todo: do not ignore lock/bound prefix */ }
+            0xF2 => { repeat = Repeat::NotEqual }
+            0xF3 => { repeat = Repeat::Equal; }
+            0x2E | 0x3E | 0x36 | 0x26 | 0x64 | 0x65 => { /* TODO: do not ignore segment prefix (or probably we should?) */ }
+            0x66 => { flags |= Flags::OPERAND_16_BIT; }
+            0x67 => { flags |= Flags::ADDRESS_SIZE_OVERRIDE; }
             bits @ 0x40..=0x4F => { // 64bit REX prefix
                 let rex = REX{bits};
-                if rex.contains(REX::B) { decoder_flags |= DecoderFlags::NEW_64BIT_REGISTER; }
-                if rex.contains(REX::R) { decoder_flags |= DecoderFlags::MOD_R_M_EXTENSION; }
-                if rex.contains(REX::X) { decoder_flags |= DecoderFlags::SIB_EXTENSION; }
-                if rex.contains(REX::W) { decoder_flags |= DecoderFlags::OPERAND_64_BIT;  }
-                decoder_flags |= DecoderFlags::NEW_8BIT_REGISTER;
+                if rex.contains(REX::B) { flags |= Flags::NEW_64BIT_REGISTER; }
+                if rex.contains(REX::R) { flags |= Flags::MOD_R_M_EXTENSION; }
+                if rex.contains(REX::X) { flags |= Flags::SIB_EXTENSION; }
+                if rex.contains(REX::W) { flags |= Flags::OPERAND_64_BIT;  }
+                flags |= Flags::NEW_8BIT_REGISTER;
             }
             _ => break,
         }
         *rip += 1;
     }
 
-    let register_size = if decoder_flags.contains(DecoderFlags::OPERAND_64_BIT) {
+    let register_size = if flags.contains(Flags::OPERAND_64_BIT) {
         RegisterSize::Bit64
     } else {
-        if decoder_flags.contains(DecoderFlags::OPERAND_16_BIT) {
+        if flags.contains(Flags::OPERAND_16_BIT) {
             RegisterSize::Bit16
         } else {
             RegisterSize::Bit32
@@ -76,230 +63,222 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
     let scc = Opcode!(Seto Setno Setb Setae Sete Setne Setbe Seta Sets Setns Setp Setnp Setl Setge Setle Setg);
     match memory.read_byte(*rip as u64) {
         0x00 => {
-            let argument = decode_8bit_reg_8bit_immediate(memory, rip, decoder_flags);
-            (Opcode::Add, argument)
+            let op = decode_8bit_reg_8bit_immediate(memory, rip, flags);
+            (Opcode::Add, op)
         }
         0x01 => {
-            let argument = decode_reg_reg(memory, rip, register_size, decoder_flags);
-            (Opcode::Add, argument)
+            let op = decode_reg_reg(memory, rip, register_size, flags);
+            (Opcode::Add, op)
         }
         0x02 => {
-            let argument = decode_8bit_reg_8bit_immediate(memory, rip, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            (Opcode::Add, argument)
+            let op = decode_8bit_reg_8bit_immediate(memory, rip, flags | Flags::REVERSED_REGISTER_DIRECTION);
+            (Opcode::Add, op)
         }
         0x03 => {
-            let argument = decode_reg_reg(memory, rip, register_size, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            (Opcode::Add, argument)
+            let op = decode_reg_reg(memory, rip, register_size, flags | Flags::REVERSED_REGISTER_DIRECTION);
+            (Opcode::Add, op)
         }
         0x04 => {
-            let argument = decode_al_immediate(memory, rip);
-            (Opcode::Add, argument)
+            let op = decode_al_immediate(memory, rip);
+            (Opcode::Add, op)
         }
         0x05 => {
-            let argument = decode_ax_immediate(memory, rip, register_size, decoder_flags);
-            (Opcode::Add, argument)
+            let op = decode_ax_immediate(memory, rip, register_size, flags);
+            (Opcode::Add, op)
         }
         0x08 => {
-            let argument = decode_8bit_reg_8bit_immediate(memory, rip, decoder_flags);
-            (Opcode::Or, argument)
+            let op = decode_8bit_reg_8bit_immediate(memory, rip, flags);
+            (Opcode::Or, op)
         }
         0x09 => {
-            let argument = decode_reg_reg(memory, rip, register_size, decoder_flags);
-            (Opcode::Or, argument)
+            let op = decode_reg_reg(memory, rip, register_size, flags);
+            (Opcode::Or, op)
         }
         0x0A => {
-            let argument = decode_8bit_reg_8bit_immediate(memory, rip, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            (Opcode::Or, argument)
+            let op = decode_8bit_reg_8bit_immediate(memory, rip, flags | Flags::REVERSED_REGISTER_DIRECTION);
+            (Opcode::Or, op)
         }
         0x0B => {
-            let argument = decode_reg_reg(memory, rip, register_size, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            (Opcode::Or, argument)
+            let op = decode_reg_reg(memory, rip, register_size, flags | Flags::REVERSED_REGISTER_DIRECTION);
+            (Opcode::Or, op)
         }
         0x0C => {
-            let argument = decode_al_immediate(memory, rip);
-            (Opcode::Or, argument)
+            let op = decode_al_immediate(memory, rip);
+            (Opcode::Or, op)
         }
         0x0D => {
-            let argument = decode_ax_immediate(memory, rip, register_size, decoder_flags);
-            (Opcode::Or, argument)
+            let op = decode_ax_immediate(memory, rip, register_size, flags);
+            (Opcode::Or, op)
         }
         0x10 => {
-            let argument = decode_8bit_reg_8bit_immediate(memory, rip, decoder_flags);
-            (Opcode::Adc, argument)
+            let op = decode_8bit_reg_8bit_immediate(memory, rip, flags);
+            (Opcode::Adc, op)
         }
         0x11 => {
-            let argument = decode_reg_reg(memory, rip, register_size, decoder_flags);
-            (Opcode::Adc, argument)
+            let op = decode_reg_reg(memory, rip, register_size, flags);
+            (Opcode::Adc, op)
         }
         0x12 => {
-            let argument = decode_8bit_reg_8bit_immediate(memory, rip, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            (Opcode::Adc, argument)
+            let op = decode_8bit_reg_8bit_immediate(memory, rip, flags | Flags::REVERSED_REGISTER_DIRECTION);
+            (Opcode::Adc, op)
         }
         0x13 => {
-            let argument = decode_reg_reg(memory, rip, register_size, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            (Opcode::Adc, argument)
+            let op = decode_reg_reg(memory, rip, register_size, flags | Flags::REVERSED_REGISTER_DIRECTION);
+            (Opcode::Adc, op)
         }
         0x14 => {
-            let argument = decode_al_immediate(memory, rip);
-            (Opcode::Adc, argument)
+            let op = decode_al_immediate(memory, rip);
+            (Opcode::Adc, op)
         }
         0x15 => {
-            let argument = decode_ax_immediate(memory, rip, register_size, decoder_flags);
-            (Opcode::Adc, argument)
+            let op = decode_ax_immediate(memory, rip, register_size, flags);
+            (Opcode::Adc, op)
         }
         0x18 => {
-            let argument = decode_8bit_reg_8bit_immediate(memory, rip, decoder_flags);
-            (Opcode::Sbb, argument)
+            let op = decode_8bit_reg_8bit_immediate(memory, rip, flags);
+            (Opcode::Sbb, op)
         }
         0x19 => {
-            let argument = decode_reg_reg(memory, rip, register_size, decoder_flags);
-            (Opcode::Sbb, argument)
+            let op = decode_reg_reg(memory, rip, register_size, flags);
+            (Opcode::Sbb, op)
         }
         0x1A => {
-            let argument = decode_8bit_reg_8bit_immediate(memory, rip, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            (Opcode::Sbb, argument)
+            let op = decode_8bit_reg_8bit_immediate(memory, rip, flags | Flags::REVERSED_REGISTER_DIRECTION);
+            (Opcode::Sbb, op)
         }
         0x1B => {
-            let argument = decode_reg_reg(memory, rip, register_size, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            (Opcode::Sbb, argument)
+            let op = decode_reg_reg(memory, rip, register_size, flags | Flags::REVERSED_REGISTER_DIRECTION);
+            (Opcode::Sbb, op)
         }
         0x1C => {
-            let argument = decode_al_immediate(memory, rip);
-            (Opcode::Sbb, argument)
+            let op = decode_al_immediate(memory, rip);
+            (Opcode::Sbb, op)
         }
         0x1D => {
-            let argument = decode_ax_immediate(memory, rip, register_size, decoder_flags);
-            (Opcode::Sbb, argument)
+            let op = decode_ax_immediate(memory, rip, register_size, flags);
+            (Opcode::Sbb, op)
         }
         0x20 => {
-            let argument = decode_8bit_reg_8bit_immediate(memory, rip, decoder_flags);
-            (Opcode::And, argument)
+            let op = decode_8bit_reg_8bit_immediate(memory, rip, flags);
+            (Opcode::And, op)
         }
         0x21 => {
-            let argument = decode_reg_reg(memory, rip, register_size, decoder_flags);
-            (Opcode::And, argument)
+            let op = decode_reg_reg(memory, rip, register_size, flags);
+            (Opcode::And, op)
         }
         0x22 => {
-            let argument = decode_8bit_reg_8bit_immediate(memory, rip, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            (Opcode::And, argument)
+            let op = decode_8bit_reg_8bit_immediate(memory, rip, flags | Flags::REVERSED_REGISTER_DIRECTION);
+            (Opcode::And, op)
         }
         0x23 => {
-            let argument = decode_reg_reg(memory, rip, register_size, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            (Opcode::And, argument)
+            let op = decode_reg_reg(memory, rip, register_size, flags | Flags::REVERSED_REGISTER_DIRECTION);
+            (Opcode::And, op)
         }
         0x24 => {
-            let argument = decode_al_immediate(memory, rip);
-            (Opcode::And, argument)
+            let op = decode_al_immediate(memory, rip);
+            (Opcode::And, op)
         }
         0x25 => {
-            let argument = decode_ax_immediate(memory, rip, register_size, decoder_flags);
-            (Opcode::And, argument)
+            let op = decode_ax_immediate(memory, rip, register_size, flags);
+            (Opcode::And, op)
         }
         0x28 => {
-            let argument = decode_8bit_reg_8bit_immediate(memory, rip, decoder_flags);
-            (Opcode::Sub, argument)
+            let op = decode_8bit_reg_8bit_immediate(memory, rip, flags);
+            (Opcode::Sub, op)
         }
         0x29 => {
-            let argument = decode_reg_reg(memory, rip, register_size, decoder_flags);
-            (Opcode::Sub, argument)
+            let op = decode_reg_reg(memory, rip, register_size, flags);
+            (Opcode::Sub, op)
         }
         0x2A => {
-            let argument = decode_8bit_reg_8bit_immediate(memory, rip, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            (Opcode::Sub, argument)
+            let op = decode_8bit_reg_8bit_immediate(memory, rip, flags | Flags::REVERSED_REGISTER_DIRECTION);
+            (Opcode::Sub, op)
         }
         0x2B => {
-            let argument = decode_reg_reg(memory, rip, register_size, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            (Opcode::Sub, argument)
+            let op = decode_reg_reg(memory, rip, register_size, flags | Flags::REVERSED_REGISTER_DIRECTION);
+            (Opcode::Sub, op)
         }
         0x2C => {
-            let argument = decode_al_immediate(memory, rip);
-            (Opcode::Sub, argument)
+            let op = decode_al_immediate(memory, rip);
+            (Opcode::Sub, op)
         }
         0x2D => {
-            let argument = decode_ax_immediate(memory, rip, register_size, decoder_flags);
-            (Opcode::Sub, argument)
+            let op = decode_ax_immediate(memory, rip, register_size, flags);
+            (Opcode::Sub, op)
         }
         0x30 => {
-            let argument = decode_8bit_reg_8bit_immediate(memory, rip, decoder_flags);
-            (Opcode::Xor, argument)
+            let op = decode_8bit_reg_8bit_immediate(memory, rip, flags);
+            (Opcode::Xor, op)
         }
         0x31 => {
-            let argument = decode_reg_reg(memory, rip, register_size, decoder_flags);
-            (Opcode::Xor, argument)
+            let op = decode_reg_reg(memory, rip, register_size, flags);
+            (Opcode::Xor, op)
         }
         0x32 => {
-            let argument = decode_8bit_reg_8bit_immediate(memory, rip, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            (Opcode::Xor, argument)
+            let op = decode_8bit_reg_8bit_immediate(memory, rip, flags | Flags::REVERSED_REGISTER_DIRECTION);
+            (Opcode::Xor, op)
         }
         0x33 => {
-            let argument = decode_reg_reg(memory, rip, register_size, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            (Opcode::Xor, argument)
+            let op = decode_reg_reg(memory, rip, register_size, flags | Flags::REVERSED_REGISTER_DIRECTION);
+            (Opcode::Xor, op)
         }
         0x34 => {
-            let argument = decode_al_immediate(memory, rip);
-            (Opcode::Xor, argument)
+            let op = decode_al_immediate(memory, rip);
+            (Opcode::Xor, op)
         }
         0x35 => {
-            let argument = decode_ax_immediate(memory, rip, register_size, decoder_flags);
-            (Opcode::Xor, argument)
+            let op = decode_ax_immediate(memory, rip, register_size, flags);
+            (Opcode::Xor, op)
         }
         0x38 => {
-            let argument = decode_8bit_reg_8bit_immediate(memory, rip, decoder_flags);
-            (Opcode::Cmp, argument)
+            let op = decode_8bit_reg_8bit_immediate(memory, rip, flags);
+            (Opcode::Cmp, op)
         }
         0x39 => {
-            let argument = decode_reg_reg(memory, rip, register_size, decoder_flags);
-            (Opcode::Cmp, argument)
+            let op = decode_reg_reg(memory, rip, register_size, flags);
+            (Opcode::Cmp, op)
         }
         0x3A => {
-            let argument = decode_8bit_reg_8bit_immediate(memory, rip, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            (Opcode::Cmp, argument)
+            let op = decode_8bit_reg_8bit_immediate(memory, rip, flags | Flags::REVERSED_REGISTER_DIRECTION);
+            (Opcode::Cmp, op)
         }
         0x3B => {
-            let argument = decode_reg_reg(memory, rip, register_size, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            (Opcode::Cmp, argument)
+            let op = decode_reg_reg(memory, rip, register_size, flags | Flags::REVERSED_REGISTER_DIRECTION);
+            (Opcode::Cmp, op)
         }
         0x3C => {
-            let argument = decode_al_immediate(memory, rip);
-            (Opcode::Cmp, argument)
+            let op = decode_al_immediate(memory, rip);
+            (Opcode::Cmp, op)
         }
         0x3D => {
-            let argument = decode_ax_immediate(memory, rip, register_size, decoder_flags);
-            (Opcode::Cmp, argument)
+            let op = decode_ax_immediate(memory, rip, register_size, flags);
+            (Opcode::Cmp, op)
         }
         opcode @ 0x50..=0x57 => {
             *rip += 1;
-            (Opcode::Push,
-                        InstructionBuilder::new().first_argument(Argument::Register {
-                            register: get_register(opcode - 0x50, RegisterSize::Bit64,
-                                    decoder_flags.contains(DecoderFlags::NEW_64BIT_REGISTER),
-                                    decoder_flags.contains(DecoderFlags::NEW_8BIT_REGISTER)),
-                        }).finalize())
+            (Opcode::Push, Instruction{ arguments: (Some(Argument::Register{ register: get_register(opcode - 0x50, RegisterSize::Bit64,
+                                                                                                                                                            flags.contains(Flags::NEW_64BIT_REGISTER),
+                                                                                                                                                            flags.contains(Flags::NEW_8BIT_REGISTER)) }),
+                                                                             None, None), ..Default::default() })
         }
         opcode @ 0x58..=0x5F => {
-            let argument =
-                InstructionBuilder::new().first_argument(Argument::Register {
-                        register:
-                            get_register(opcode - 0x58,
-                                            RegisterSize::Bit64,
-                                            decoder_flags.contains(DecoderFlags::NEW_64BIT_REGISTER),
-                                            decoder_flags.contains(DecoderFlags::NEW_8BIT_REGISTER)),
-                    })
-                    .finalize();
             *rip += 1;
-            (Opcode::Pop, argument)
+            (Opcode::Pop, Instruction{ arguments: (Some(Argument::Register{ register: get_register(opcode - 0x58, RegisterSize::Bit64,
+                                                                                                                                                            flags.contains(Flags::NEW_64BIT_REGISTER),
+                                                                                                                                                            flags.contains(Flags::NEW_8BIT_REGISTER)) }),
+                                                                             None, None), ..Default::default() })
         }
         0x63 => {
-            let (mut argument, ip_offset) = get_argument(&memory, *rip, register_size,
+            let (mut op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            override_argument_size(&memory, *rip, &mut argument, ArgumentSize::Bit32, &decoder_flags);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
+            override_argument_size(&memory, *rip, &mut op, ArgumentSize::Bit32, &flags);
             *rip += ip_offset;
-            (Opcode::Movsx, argument)
+            (Opcode::Movsx, op)
         }
         0x68 => {
-            let immediate = if decoder_flags.contains(DecoderFlags::OPERAND_16_BIT) {
+            let immediate = if flags.contains(Flags::OPERAND_16_BIT) {
                 let immediate = memory.get_i16(*rip, 1) as i64;
                 *rip += 3;
                 immediate
@@ -308,18 +287,13 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
                 *rip += 5;
                 immediate
             };
-            let argument = InstructionBuilder::new().first_argument(
-                Argument::Immediate { immediate: immediate }
-            ).finalize();
-            (Opcode::Push, argument)
+            (Opcode::Push, Instruction{ arguments: (Some(Argument::Immediate{ immediate }), None, None), ..Default::default() })
         }
         0x69 => {
-            let (mut argument, ip_offset) = get_argument(&memory, *rip, register_size,
-                                                                RegOrOpcode::Register,
-                                                                ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+            let (mut op, ip_offset) = get_argument(&memory, *rip, register_size, RegOrOpcode::Register, ImmediateSize::None,
+                                                                            flags | Flags::REVERSED_REGISTER_DIRECTION);
             *rip += ip_offset;
-            let immediate = if decoder_flags.contains(DecoderFlags::OPERAND_16_BIT) {
+            let immediate = if flags.contains(Flags::OPERAND_16_BIT) {
                 let immediate = memory.get_i16(*rip, 0) as i64;
                 *rip += 2;
                 immediate
@@ -328,206 +302,186 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
                 *rip += 4;
                 immediate
             };
-            argument.third_argument = argument.second_argument;
-            argument.second_argument = argument.first_argument;
-            argument.first_argument = Some(Argument::Immediate { immediate: immediate });
-            (Opcode::Imul, argument)
+            op.arguments.2 = op.arguments.1;
+            op.arguments.1 = op.arguments.0;
+            op.arguments.0 = Some(Argument::Immediate{ immediate: immediate });
+            (Opcode::Imul, op)
         }
         0x6A => (Opcode::Push, read_immediate_8bit(memory, rip)),
         0x6B => {
-            let (mut argument, ip_offset) = get_argument(memory, *rip, register_size,
+            let (mut op, ip_offset) = get_argument(memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
             *rip += ip_offset;
             let immediate = memory.get_i8(*rip, 0) as i64;
-            argument.third_argument = argument.second_argument;
-            argument.second_argument = argument.first_argument;
-            argument.first_argument = Some(Argument::Immediate { immediate: immediate });
+            op.arguments.2 = op.arguments.1;
+            op.arguments.1 = op.arguments.0;
+            op.arguments.0 = Some(Argument::Immediate{ immediate: immediate });
             *rip += 1;
-            (Opcode::Imul, argument)
+            (Opcode::Imul, op)
         }
         opcode @ 0x70..=0x7F => { (jcc[(opcode-0x70) as usize], read_immediate_8bit(memory, rip)) }
         0x80 => {
             // arithmetic operation (8bit register target, 8bit immediate)
-            let (argument, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
+            let (op, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
                                                             RegOrOpcode::Opcode,
                                                             ImmediateSize::Bit8,
-                                                            decoder_flags);
+                                                            flags);
             *rip += ip_offset;
-            (Opcode::Arithmetic, argument)
+            (Opcode::Arithmetic, op)
         }
         0x81 => {
             // arithmetic operation (32/64bit register target, 32bit immediate)
-            let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+            let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                             RegOrOpcode::Opcode,
                                                             ImmediateSize::Bit32,
-                                                            decoder_flags);
+                                                            flags);
             *rip += ip_offset;
-            (Opcode::Arithmetic, argument)
+            (Opcode::Arithmetic, op)
         }
         0x83 => {
             // arithmetic operation (32/64bit register target, 8bit immediate)
-            let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+            let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                             RegOrOpcode::Opcode,
                                                             ImmediateSize::Bit8,
-                                                            decoder_flags);
+                                                            flags);
             *rip += ip_offset;
-            (Opcode::Arithmetic, argument)
+            (Opcode::Arithmetic, op)
         }
         0x84 => {
             // test
-            let (argument, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
+            let (op, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
                                                             RegOrOpcode::Register,
                                                             ImmediateSize::None,
-                                                            decoder_flags);
+                                                            flags);
             *rip += ip_offset;
-            (Opcode::Test, argument)
+            (Opcode::Test, op)
         }
         0x85 => {
             // test
-            let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+            let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                             RegOrOpcode::Register,
                                                             ImmediateSize::None,
-                                                            decoder_flags);
+                                                            flags);
             *rip += ip_offset;
-            (Opcode::Test, argument)
+            (Opcode::Test, op)
         }
         0x86 => {
-            let (argument, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
+            let (op, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
                                                             RegOrOpcode::Register,
                                                             ImmediateSize::None,
-                                                            decoder_flags);
+                                                            flags);
             *rip += ip_offset;
-            (Opcode::Xchg, argument)
+            (Opcode::Xchg, op)
         }
         0x87 => {
-            let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+            let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                             RegOrOpcode::Register,
                                                             ImmediateSize::None,
-                                                            decoder_flags);
+                                                            flags);
             *rip += ip_offset;
-            (Opcode::Xchg, argument)
+            (Opcode::Xchg, op)
         }
         0x88 => {
             // mov
-            let (argument, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
+            let (op, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
                                                             RegOrOpcode::Register,
                                                             ImmediateSize::None,
-                                                            decoder_flags);
+                                                            flags);
             *rip += ip_offset;
-            (Opcode::Mov, argument)
+            (Opcode::Mov, op)
         }
         0x89 => {
             // mov
-            let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+            let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                             RegOrOpcode::Register,
                                                             ImmediateSize::None,
-                                                            decoder_flags);
+                                                            flags);
             *rip += ip_offset;
-            (Opcode::Mov, argument)
+            (Opcode::Mov, op)
         }
         0x8A => {
             // mov
-            let (argument, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
+            let (op, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
                                                             RegOrOpcode::Register,
                                                             ImmediateSize::None,
-                                                            decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                            flags | Flags::REVERSED_REGISTER_DIRECTION);
             *rip += ip_offset;
-            (Opcode::Mov, argument)
+            (Opcode::Mov, op)
         }
         0x8B => {
-            let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+            let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                             RegOrOpcode::Register,
                                                             ImmediateSize::None,
-                                                            decoder_flags |
-                                                            DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                            flags |
+                                                            Flags::REVERSED_REGISTER_DIRECTION);
             *rip += ip_offset;
-            (Opcode::Mov, argument)
+            (Opcode::Mov, op)
         }
         0x8D => {
-            let (argument, ip_offset) =
+            let (op, ip_offset) =
                 get_argument(&memory, *rip, register_size,
                                     RegOrOpcode::Register,
                                     ImmediateSize::None,
                                     // TODO: REVERSED_REGISTER_DIRECTION correct?
-                                    decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                    flags | Flags::REVERSED_REGISTER_DIRECTION);
             *rip += ip_offset;
-            (Opcode::Lea, argument)
+            (Opcode::Lea, op)
         }
         0x8E => {
             // mov 16bit segment registers
-            let (argument, ip_offset) =
+            let (op, ip_offset) =
                 get_argument(&memory, *rip, RegisterSize::Segment,
                                     RegOrOpcode::Register,
                                     ImmediateSize::None,
                                     // TODO: REVERSED_REGISTER_DIRECTION correct?
-                                    decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                    flags | Flags::REVERSED_REGISTER_DIRECTION);
             *rip += ip_offset;
-            (Opcode::Mov, argument)
+            (Opcode::Mov, op)
         }
         0x8F => {
-            let (mut argument, ip_offset) = get_argument(&memory, *rip, register_size,
+            let (mut op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags |
-                                                                DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            argument.second_argument = None;
+                                                                flags |
+                                                                Flags::REVERSED_REGISTER_DIRECTION);
+            op.arguments.1 = None;
             *rip += ip_offset;
-            (Opcode::Pop, argument)
+            (Opcode::Pop, op)
         }
         0x90 => {
             *rip += 1;
             (Opcode::Nop, Instruction::default())
         }
         opcode @ 0x91..=0x97 => {
-            let argument = InstructionBuilder::new()
-                .first_argument(Argument::Register {
-                    register: get_register(0, register_size,
-                                            decoder_flags.contains(DecoderFlags::NEW_64BIT_REGISTER),
-                                            decoder_flags.contains(DecoderFlags::NEW_8BIT_REGISTER)),
-                    })
-                    .second_argument(Argument::Register {
-                        register: get_register(opcode - 0x90,
-                                                register_size,
-                                                decoder_flags.contains(DecoderFlags::NEW_64BIT_REGISTER),
-                                                decoder_flags.contains(DecoderFlags::NEW_8BIT_REGISTER)),
-                    })
-                    .finalize();
+            let register1 = get_register(0, register_size, flags.contains(Flags::NEW_64BIT_REGISTER), flags.contains(Flags::NEW_8BIT_REGISTER));
+            let register2 = get_register(opcode - 0x90, register_size, flags.contains(Flags::NEW_64BIT_REGISTER), flags.contains(Flags::NEW_8BIT_REGISTER));
             *rip += 1;
-            (Opcode::Xchg, argument)
+            (Opcode::Xchg, Instruction{ arguments: (Some(Argument::Register{ register: register1 }), Some(Argument::Register{ register: register2 }), None), ..Default::default() })
         }
         0x98 => {
-            let (register1, register2) = if decoder_flags.contains(DecoderFlags::OPERAND_16_BIT) {
+            let (register1, register2) = if flags.contains(Flags::OPERAND_16_BIT) {
                 (Register::AL, Register::AX)
-            } else if decoder_flags.contains(DecoderFlags::OPERAND_64_BIT) {
+            } else if flags.contains(Flags::OPERAND_64_BIT) {
                 (Register::EAX, Register::RAX)
             } else {
                 (Register::AX, Register::EAX)
             };
-
-            let argument = InstructionBuilder::new().first_argument(
-                Argument::Register{register: register1}
-            ).second_argument(Argument::Register{register: register2})
-            .finalize();
             *rip += 1;
-            (Opcode::Mov, argument)
+            (Opcode::Mov, Instruction{ arguments: (Some(Argument::Register{register: register1}), Some(Argument::Register{register: register2}), None), ..Default::default() })
         }
         0x99 => {
-            let (register1, register2) = if decoder_flags.contains(DecoderFlags::OPERAND_16_BIT) {
+            let (register1, register2) = if flags.contains(Flags::OPERAND_16_BIT) {
                 (Register::AX, Register::DX)
-            } else if decoder_flags.contains(DecoderFlags::OPERAND_64_BIT) {
+            } else if flags.contains(Flags::OPERAND_64_BIT) {
                 (Register::RAX, Register::RDX)
             } else {
                 (Register::EAX, Register::EDX)
             };
 
-            let argument = InstructionBuilder::new().first_argument(
-                Argument::Register{register: register1}
-            ).second_argument(Argument::Register{register: register2})
-            .finalize();
             *rip += 1;
-            (Opcode::Mov, argument)
+            (Opcode::Mov, Instruction{ arguments: (Some(Argument::Register{register: register1}), Some(Argument::Register{register: register2}), None), ..Default::default() })
         }
         0x9C => {
             *rip += 1;
@@ -539,39 +493,30 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
         }
         0xA4 => {
             *rip += 1;
-            (Opcode::Movs, InstructionBuilder::new()
-                .repeat(decoder_flags.contains(DecoderFlags::REPEAT_EQUAL), decoder_flags.contains(DecoderFlags::REPEAT_NOT_EQUAL))
-                .explicit_size(ArgumentSize::Bit8)
-                .finalize())
+            (Opcode::Movs, Instruction{ repeat, explicit_size: Some(ArgumentSize::Bit8), ..Default::default()})
         }
         0xA5 => {
-            let argument_size = if decoder_flags.contains(DecoderFlags::OPERAND_16_BIT) {
+            let argument_size = if flags.contains(Flags::OPERAND_16_BIT) {
                 ArgumentSize::Bit16
-            } else if decoder_flags.contains(DecoderFlags::OPERAND_64_BIT) {
+            } else if flags.contains(Flags::OPERAND_64_BIT) {
                 ArgumentSize::Bit64
             } else {
                 ArgumentSize::Bit32
             };
             *rip += 1;
-            (Opcode::Movs, InstructionBuilder::new()
-                .repeat(decoder_flags.contains(DecoderFlags::REPEAT_EQUAL), decoder_flags.contains(DecoderFlags::REPEAT_NOT_EQUAL))
-                .explicit_size(argument_size)
-                .finalize())
+            (Opcode::Movs, Instruction{ repeat, explicit_size: Some(argument_size), ..Default::default() })
         }
         0xA8 => {
-            let argument = decode_al_immediate(memory, rip);
-            (Opcode::Test, argument)
+            let op = decode_al_immediate(memory, rip);
+            (Opcode::Test, op)
         }
         0xA9 => {
-            let argument = decode_ax_immediate(memory, rip, register_size, decoder_flags);
-            (Opcode::Test, argument)
+            let op = decode_ax_immediate(memory, rip, register_size, flags);
+            (Opcode::Test, op)
         }
         0xAA => {
             *rip += 1;
-            (Opcode::Stos, InstructionBuilder::new()
-                .repeat(decoder_flags.contains(DecoderFlags::REPEAT_EQUAL), decoder_flags.contains(DecoderFlags::REPEAT_NOT_EQUAL))
-                .explicit_size(ArgumentSize::Bit8)
-                .finalize())
+            (Opcode::Stos, Instruction{ repeat, explicit_size: Some(ArgumentSize::Bit8), ..Default::default() })
         }
         0xAB => {
             *rip += 1;
@@ -582,97 +527,71 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
                 RegisterSize::Bit64 => ArgumentSize::Bit64,
                 RegisterSize::Segment => panic!("Unsupported register size"),
             };
-            (Opcode::Stos, InstructionBuilder::new()
-                .repeat(decoder_flags.contains(DecoderFlags::REPEAT_EQUAL), decoder_flags.contains(DecoderFlags::REPEAT_NOT_EQUAL))
-                .explicit_size(argument_size)
-                .finalize())
+            (Opcode::Stos, Instruction{ repeat, explicit_size: Some(argument_size), ..Default::default() })
         }
         0xAE => {
             *rip += 1;
-            (Opcode::Scas, InstructionBuilder::new()
-                .first_argument(Argument::EffectiveAddress{
-                    base: Some(Register::RDI),
-                    index: None,
-                    scale: None,
-                    displacement: 0,
-                    })
-                .second_argument(Argument::Register{ register: Register::AL })
-                .repeat(decoder_flags.contains(DecoderFlags::REPEAT_EQUAL), decoder_flags.contains(DecoderFlags::REPEAT_NOT_EQUAL))
-                .finalize())
+            (Opcode::Scas, Instruction{ arguments: (Some(Argument::EffectiveAddress{ base: Some(Register::RDI), index: None, scale: None, displacement: 0 }),
+                                                                             Some(Argument::Register{ register: Register::AL }),
+                                                                             None), repeat, ..Default::default() })
         }
         opcode @ 0xB0..=0xB7 => {
             let immediate = memory.get_u8(*rip, 1) as i64;
-            let argument =
-                InstructionBuilder::new().first_argument(Argument::Immediate {
-                        immediate: immediate as i64,
-                    })
-                    .second_argument(Argument::Register {
-                        register:
-                            get_register(opcode - 0xB0,
-                                            RegisterSize::Bit8,
-                                            decoder_flags.contains(DecoderFlags::NEW_64BIT_REGISTER),
-                                            decoder_flags.contains(DecoderFlags::NEW_8BIT_REGISTER)),
-                    })
-                    .finalize();
             *rip += 2;
-            (Opcode::Mov, argument)
+            (Opcode::Mov, Instruction{ arguments: (Some(Argument::Immediate{ immediate: immediate as i64 }),
+                                                                            Some(Argument::Register{ register: get_register(opcode - 0xB0, RegisterSize::Bit8,
+                                                                                                                                                           flags.contains(Flags::NEW_64BIT_REGISTER),
+                                                                                                                                                           flags.contains(Flags::NEW_8BIT_REGISTER)) }),
+                                                                            None), ..Default::default() })
         }
         opcode @ 0xB8..=0xBF => {
-            let (immediate, ip_offset) = if decoder_flags.contains(DecoderFlags::OPERAND_64_BIT) {
+            let (immediate, ip_offset) = if flags.contains(Flags::OPERAND_64_BIT) {
                 (memory.get_i64(*rip, 1) as i64, 9)
             } else {
-                if decoder_flags.contains(DecoderFlags::OPERAND_16_BIT) {
+                if flags.contains(Flags::OPERAND_16_BIT) {
                     (memory.get_i16(*rip, 1) as i64, 3)
                 } else {
                     (memory.get_i32(*rip, 1) as i64, 5)
                 }
             };
-            let argument =
-                InstructionBuilder::new().first_argument(Argument::Immediate {
-                        immediate: immediate,
-                    })
-                    .second_argument(Argument::Register {
-                        register:
-                            get_register(opcode - 0xB8,
-                                            register_size,
-                                            decoder_flags.contains(DecoderFlags::NEW_64BIT_REGISTER),
-                                            decoder_flags.contains(DecoderFlags::NEW_8BIT_REGISTER)),
-                    })
-                    .finalize();
             *rip += ip_offset;
-            (Opcode::Mov, argument)
+            (Opcode::Mov, Instruction{ arguments: (Some(Argument::Immediate{ immediate }),
+                                                                            Some(Argument::Register{ register: get_register(opcode - 0xB8, register_size,
+                                                                                                                                                           flags.contains(Flags::NEW_64BIT_REGISTER),
+                                                                                                                                                           flags.contains(Flags::NEW_8BIT_REGISTER)) }),
+                                                                            None), ..Default::default() })
         }
         0xC6 => {
-            let (argument, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
+            let (op, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
                                                             RegOrOpcode::Opcode,
                                                             ImmediateSize::Bit8,
-                                                            decoder_flags);
+                                                            flags);
             *rip += ip_offset;
-            (Opcode::Mov, argument)
+            (Opcode::Mov, op)
         }
         0xC7 => {
-            let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+            let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                             RegOrOpcode::Opcode,
                                                             ImmediateSize::Bit32,
-                                                            decoder_flags);
+                                                            flags);
             *rip += ip_offset;
-            (Opcode::Mov, argument)
+            (Opcode::Mov, op)
         }
         0xC0 => {
-            let (argument, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
+            let (op, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
                                                             RegOrOpcode::Opcode,
                                                             ImmediateSize::Bit8,
-                                                            decoder_flags);
+                                                            flags);
             *rip += ip_offset;
-            (Opcode::ShiftRotate, argument)
+            (Opcode::ShiftRotate, op)
         }
         0xC1 => {
-            let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+            let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                             RegOrOpcode::Opcode,
                                                             ImmediateSize::Bit8,
-                                                            decoder_flags);
+                                                            flags);
             *rip += ip_offset;
-            (Opcode::ShiftRotate, argument)
+            (Opcode::ShiftRotate, op)
         }
         0xC3 => {
             (Opcode::Ret, Instruction::default())
@@ -685,59 +604,53 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
             (Opcode::Lret, Instruction::default())
         }
         0xD1 => {
-            let (mut argument, ip_offset) = get_argument(&memory, *rip, register_size,
+            let (mut op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                             RegOrOpcode::Opcode,
                                                             ImmediateSize::None,
-                                                            decoder_flags);
-            argument.second_argument = Some(argument.first_argument.unwrap());
-            argument.first_argument = Some(Argument::Immediate{
+                                                            flags);
+            op.arguments.1 = Some(op.arguments.0.unwrap());
+            op.arguments.0 = Some(Argument::Immediate{
                 immediate: 1,
             });
             *rip += ip_offset;
-            (Opcode::ShiftRotate, argument)
+            (Opcode::ShiftRotate, op)
         }
         0xD2 => {
-            let (mut argument, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
+            let (mut op, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
                                                                 RegOrOpcode::Opcode,
                                                                 ImmediateSize::None,
-                                                                decoder_flags);
-            argument.second_argument = Some(argument.first_argument.unwrap());
-            argument.first_argument = Some(Argument::Register{
+                                                                flags);
+            op.arguments.1 = Some(op.arguments.0.unwrap());
+            op.arguments.0 = Some(Argument::Register{
                 register: Register::CL
             });
             *rip += ip_offset;
-            (Opcode::ShiftRotate, argument)
+            (Opcode::ShiftRotate, op)
         }
         0xD3 => {
-            let (mut argument, ip_offset) = get_argument(&memory, *rip, register_size,
+            let (mut op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                             RegOrOpcode::Opcode,
                                                             ImmediateSize::None,
-                                                            decoder_flags);
-            let size = argument.size();
-            argument.second_argument = Some(argument.first_argument.unwrap());
-            argument.first_argument = Some(Argument::Register{
+                                                            flags);
+            let size = op.size();
+            op.arguments.1 = Some(op.arguments.0.unwrap());
+            op.arguments.0 = Some(Argument::Register{
                 register: Register::CL
             });
-            argument.explicit_size = Some(size);
+            op.explicit_size = Some(size);
             *rip += ip_offset;
-            (Opcode::ShiftRotate, argument)
+            (Opcode::ShiftRotate, op)
         }
         0xEB => { (Opcode::Jmp, read_immediate_8bit(memory, rip)) }
         0xE8 => {
             let immediate = memory.get_i32(*rip, 1);
             *rip += 5;
-            (Opcode::Call,
-                        InstructionBuilder::new().first_argument(Argument::Immediate {
-                            immediate: immediate as i64,
-                        }).finalize())
+            (Opcode::Call, Instruction{ arguments: (Some(Argument::Immediate{ immediate: immediate as i64 }), None, None), ..Default::default() } )
         }
         0xE9 => {
             let immediate = memory.get_i32(*rip, 1);
             *rip += 5;
-            (Opcode::Jmp,
-                        InstructionBuilder::new().first_argument(Argument::Immediate {
-                            immediate: immediate as i64,
-                        }).finalize())
+            (Opcode::Jmp, Instruction{ arguments: (Some(Argument::Immediate{ immediate: immediate as i64 }), None, None), ..Default::default() } )
         }
         0xEE => {
             *rip += 1;
@@ -747,63 +660,63 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
             let modrm = memory.get_u8(*rip, 1);
             let opcode = (modrm & 0b00111000) >> 3;
 
-            let (argument, ip_offset) = match opcode {
+            let (op, ip_offset) = match opcode {
                 0 | 1 => {
                     get_argument(&memory, *rip, RegisterSize::Bit8,
                                         RegOrOpcode::Opcode,
                                         ImmediateSize::Bit8,
-                                        decoder_flags)
+                                        flags)
                 },
                 2 | 3 => {
                     get_argument(&memory, *rip, RegisterSize::Bit8,
                                         RegOrOpcode::Opcode,
                                         ImmediateSize::None,
-                                        decoder_flags)
+                                        flags)
                 }
                 _ => panic!("no supported"),
             };
             *rip += ip_offset;
-            (Opcode::CompareMulOperation, argument)
+            (Opcode::CompareMulOperation, op)
         }
         0xF7 => {
             let modrm = memory.get_u8(*rip, 1);
             let opcode = (modrm & 0b00111000) >> 3;
 
-            let (argument, ip_offset) = match opcode {
+            let (op, ip_offset) = match opcode {
                 0 | 1 => {
                     // TODO: could also be 16 bit immediate
                     get_argument(&memory, *rip, register_size,
                                         RegOrOpcode::Opcode,
                                         ImmediateSize::Bit32,
-                                        decoder_flags)
+                                        flags)
                 },
                 2 | 3 => {
                     get_argument(&memory, *rip, register_size,
                                         RegOrOpcode::Opcode,
                                         ImmediateSize::None,
-                                        decoder_flags)
+                                        flags)
                 },
                 4 | 5 | 6 | 7 => {
                     /*let register = get_register(
-                        0, register_size,decoder_flags.contains(NEW_64BIT_REGISTER), false);
+                        0, register_size,flags.contains(NEW_64BIT_REGISTER), false);
 
-                    (InstructionBuilder::new().first_argument(
+                    (InstructionBuilder::new(). (
                         Argument::Register{register: register})
                         .opcode(opcode)
                         .finalize(),
                     2)*/
-                    let (mut argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (mut op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                         RegOrOpcode::Opcode,
                                                                         ImmediateSize::None,
-                                                                        decoder_flags);
-                    argument.second_argument = None;
-                    argument.opcode = Some(opcode);
-                    (argument, ip_offset)
+                                                                        flags);
+                    op.arguments.1 = None;
+                    op.opcode = Some(opcode);
+                    (op, ip_offset)
                 },
                 _ => unreachable!()
             };
             *rip += ip_offset;
-            (Opcode::CompareMulOperation, argument)
+            (Opcode::CompareMulOperation, op)
         }
         0xFA => {
             // todo: implement cli instruction
@@ -824,27 +737,25 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
             (Opcode::Std, Instruction::default())
         }
         0xFE => {
-            let (argument, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
+            let (op, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
                                                                 RegOrOpcode::Opcode,
                                                                 ImmediateSize::None,
-                                                                decoder_flags);
+                                                                flags);
             *rip += ip_offset;
-            if argument.opcode.unwrap() > 1 {
-                panic!("Invalid opcode");
-            }
-            (Opcode::RegisterOperation, argument)
+            if op.opcode.unwrap() > 1 { panic!("Invalid opcode"); }
+            (Opcode::RegisterOperation, op)
         }
         0xFF => {
             // todo: cleanup code
             let modrm = memory.get_u8(*rip, 1);
             let opcode = (modrm & 0b00111000) >> 3;
             let register_size = if opcode == 2 || opcode == 4 {RegisterSize::Bit64} else {register_size}; // FF /2, 4 (Call/jmp near absolute indirect) implies REX.W
-            let (mut argument, ip_offset) =
-                get_argument(&memory, *rip, register_size, RegOrOpcode::Register, ImmediateSize::None, decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-            argument.second_argument = None;
-            argument.opcode = Some(opcode);
+            let (mut op, ip_offset) =
+                get_argument(&memory, *rip, register_size, RegOrOpcode::Register, ImmediateSize::None, flags | Flags::REVERSED_REGISTER_DIRECTION);
+            op.arguments.1 = None;
+            op.opcode = Some(opcode);
             *rip += ip_offset;
-            (Opcode::RegisterOperation, argument)
+            (Opcode::RegisterOperation, op)
         }
         0x0F => {
             // two byte instructions
@@ -855,17 +766,17 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
                     let opcode = (modrm & 0b00111000) >> 3;
                     match opcode {
                         2  | 3 => {
-                            let (mut argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                            let (mut op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                                 RegOrOpcode::Opcode,
                                                                                 ImmediateSize::Bit32,
-                                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-                            argument.first_argument = Some(argument.second_argument.unwrap());
-                            argument.second_argument = None;
+                                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
+                            op.arguments.0 = Some(op.arguments.1.unwrap());
+                            op.arguments.1 = None;
                             *rip += ip_offset - 4;
                             if opcode == 2 {
-                                (Opcode::Lgdt, argument)
+                                (Opcode::Lgdt, op)
                             } else {
-                                (Opcode::Lidt, argument)
+                                (Opcode::Lidt, op)
                             }
                         },
                         _ => panic!("0F 01 unsupported opcode: {:x}", opcode)
@@ -880,16 +791,16 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
                     let (_, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                     RegOrOpcode::Register,
                                                                     ImmediateSize::None,
-                                                                    decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                    flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
                     (Opcode::Nop, Instruction::default())
                 }
                 0x20 => {
-                    let (mut argument, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit64,
+                    let (mut op, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit64,
                                                                     RegOrOpcode::Register,
                                                                     ImmediateSize::None,
-                                                                    decoder_flags);
-                    let register = match argument.first_argument.unwrap() {
+                                                                    flags);
+                    let register = match op.arguments.0.unwrap() {
                         Argument::Register { register } => {
                             match register {
                                 Register::R8 => Register::CR8,
@@ -902,16 +813,16 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
                         },
                         _ => panic!("Invalid argument for mov r64, CRn instruciton"),
                     };
-                    argument.first_argument = Some(Argument::Register {register: register});
+                    op.arguments.0 = Some(Argument::Register {register: register});
                     *rip += ip_offset;
-                    (Opcode::Mov, argument)
+                    (Opcode::Mov, op)
                 },
                 0x22 => {
-                    let (mut argument, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit64,
+                    let (mut op, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit64,
                                                                     RegOrOpcode::Register,
                                                                     ImmediateSize::None,
-                                                                    decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-                    let register = match argument.second_argument.unwrap() {
+                                                                    flags | Flags::REVERSED_REGISTER_DIRECTION);
+                    let register = match op.arguments.1.unwrap() {
                         Argument::Register { register } => {
                             match register {
                                 Register::R8 => Register::CR8,
@@ -924,9 +835,9 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
                         },
                         _ => panic!("Invalid argument for mov r64, CRn instruciton"),
                     };
-                    argument.second_argument = Some(Argument::Register {register: register});
+                    op.arguments.1 = Some(Argument::Register {register: register});
                     *rip += ip_offset;
-                    (Opcode::Mov, argument)
+                    (Opcode::Mov, op)
                 },
                 0x30 => {
                     *rip += 1;
@@ -937,239 +848,239 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
                     (Opcode::Rdmsr, Instruction::default())
                 }
                 0x40 => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
-                    (Opcode::Cmovo, argument)
+                    (Opcode::Cmovo, op)
                 },
                 0x41 => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
-                    (Opcode::Cmovno, argument)
+                    (Opcode::Cmovno, op)
                 },
                 0x42 => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
-                    (Opcode::Cmovb, argument)
+                    (Opcode::Cmovb, op)
                 },
                 0x43 => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
-                    (Opcode::Cmovae, argument)
+                    (Opcode::Cmovae, op)
                 },
                 0x44 => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
-                    (Opcode::Cmove, argument)
+                    (Opcode::Cmove, op)
                 },
                 0x45 => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
-                    (Opcode::Cmovne, argument)
+                    (Opcode::Cmovne, op)
                 },
                 0x46 => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
-                    (Opcode::Cmovbe, argument)
+                    (Opcode::Cmovbe, op)
                 },
                 0x47 => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
-                    (Opcode::Cmova, argument)
+                    (Opcode::Cmova, op)
                 },
                 0x48 => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
-                    (Opcode::Cmovs, argument)
+                    (Opcode::Cmovs, op)
                 },
                 0x49 => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
-                    (Opcode::Cmovns, argument)
+                    (Opcode::Cmovns, op)
                 },
                 0x4a => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
-                    (Opcode::Cmovp, argument)
+                    (Opcode::Cmovp, op)
                 },
                 0x4b => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
-                    (Opcode::Cmovnp, argument)
+                    (Opcode::Cmovnp, op)
                 },
                 0x4c => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
-                    (Opcode::Cmovl, argument)
+                    (Opcode::Cmovl, op)
                 },
                 0x4d => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
-                    (Opcode::Cmovge, argument)
+                    (Opcode::Cmovge, op)
                 },
                 0x4e => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
-                    (Opcode::Cmovle, argument)
+                    (Opcode::Cmovle, op)
                 },
                 0x4f => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
-                    (Opcode::Cmovg, argument)
+                    (Opcode::Cmovg, op)
                 },
                 opcode @ 0x80..=0x8F => {
                     // TODO: could also be 16bit value
                     let immediate = memory.get_i32(*rip, 1) as i64;
                     *rip += 5;
-                    (jcc[(opcode-0x80) as usize], InstructionBuilder::new().first_argument(Argument::Immediate { immediate }).finalize())
+                    (jcc[(opcode-0x80) as usize], Instruction{ arguments: (Some(Argument::Immediate{ immediate }), None, None), ..Default::default() })
                 },
                 opcode @ 0x90..=0x9F => {
-                    let (mut argument, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
+                    let (mut op, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
                                                                     RegOrOpcode::Register,
                                                                     ImmediateSize::None,
-                                                                    decoder_flags);
+                                                                    flags);
                     // TODO: change this hack to Something sane
-                    argument.first_argument = Some(argument.second_argument.unwrap());
-                    argument.second_argument = None;
+                    op.arguments.0 = Some(op.arguments.1.unwrap());
+                    op.arguments.1 = None;
                     *rip += ip_offset;
-                    (scc[(opcode-0x90) as usize], argument)
+                    (scc[(opcode-0x90) as usize], op)
                 },
                 0xA2 => {
                     *rip += 1;
                     (Opcode::Cpuid, Instruction::default())
                 }
                 0xA3 => {
-                    let argument = decode_reg_reg(memory, rip, register_size, decoder_flags);
-                    (Opcode::Bt, argument)
+                    let op = decode_reg_reg(memory, rip, register_size, flags);
+                    (Opcode::Bt, op)
                 }
                 0xAB => {
-                    let argument = decode_reg_reg(memory, rip, register_size, decoder_flags);
-                    (Opcode::Bts, argument)
+                    let op = decode_reg_reg(memory, rip, register_size, flags);
+                    (Opcode::Bts, op)
                 }
                 0xAF => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                 RegOrOpcode::Register,
                                                                 ImmediateSize::None,
-                                                                decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                flags | Flags::REVERSED_REGISTER_DIRECTION);
                     *rip += ip_offset;
-                    (Opcode::Imul, argument)
+                    (Opcode::Imul, op)
                 }
                 0xB0 => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
+                    let (op, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
                                                                     RegOrOpcode::Register,
                                                                     ImmediateSize::None,
-                                                                    decoder_flags);
+                                                                    flags);
                     *rip += ip_offset;
-                    (Opcode::Cmpxchg, argument)
+                    (Opcode::Cmpxchg, op)
                 }
                 0xB1 => {
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                     RegOrOpcode::Register,
                                                                     ImmediateSize::None,
-                                                                    decoder_flags);
+                                                                    flags);
                     *rip += ip_offset;
-                    (Opcode::Cmpxchg, argument)
+                    (Opcode::Cmpxchg, op)
                 }
                 0xB3 => {
-                    let argument = decode_reg_reg(memory, rip, register_size, decoder_flags);
-                    (Opcode::Btr, argument)
+                    let op = decode_reg_reg(memory, rip, register_size, flags);
+                    (Opcode::Btr, op)
                 }
                 0xB6 => {
-                    let (mut argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (mut op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                         RegOrOpcode::Register,
                                                                         ImmediateSize::None,
-                                                                        decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
+                                                                        flags | Flags::REVERSED_REGISTER_DIRECTION);
 
-                    override_argument_size(&memory, *rip, &mut argument, ArgumentSize::Bit8, &decoder_flags);
+                    override_argument_size(&memory, *rip, &mut op, ArgumentSize::Bit8, &flags);
                     *rip += ip_offset;
-                    (Opcode::Movzx, argument)
+                    (Opcode::Movzx, op)
                 }
                 0xB7 => {
-                    let (mut argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (mut op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                         RegOrOpcode::Register,
                                                                         ImmediateSize::None,
-                                                                        decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-                    override_argument_size(&memory, *rip, &mut argument, ArgumentSize::Bit16, &decoder_flags);
+                                                                        flags | Flags::REVERSED_REGISTER_DIRECTION);
+                    override_argument_size(&memory, *rip, &mut op, ArgumentSize::Bit16, &flags);
                     *rip += ip_offset;
-                    (Opcode::Movzx, argument)
+                    (Opcode::Movzx, op)
                 }
                 0xBA => {
                     // bit manipulation
-                    let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                     RegOrOpcode::Opcode,
                                                                     ImmediateSize::Bit8,
-                                                                    decoder_flags);
+                                                                    flags);
                     *rip += ip_offset;
-                    (Opcode::BitManipulation, argument)
+                    (Opcode::BitManipulation, op)
                 }
                 0xBB => {
-                    let argument = decode_reg_reg(memory, rip, register_size, decoder_flags);
-                    (Opcode::Btc, argument)
+                    let op = decode_reg_reg(memory, rip, register_size, flags);
+                    (Opcode::Btc, op)
                 }
                 0xBE => {
-                    let (mut argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (mut op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                         RegOrOpcode::Register,
                                                                         ImmediateSize::None,
-                                                                        decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-                    override_argument_size(&memory, *rip, &mut argument, ArgumentSize::Bit8, &decoder_flags);
+                                                                        flags | Flags::REVERSED_REGISTER_DIRECTION);
+                    override_argument_size(&memory, *rip, &mut op, ArgumentSize::Bit8, &flags);
                     *rip += ip_offset;
-                    (Opcode::Movsx, argument)
+                    (Opcode::Movsx, op)
                 }
                 0xBF => {
-                    let (mut argument, ip_offset) = get_argument(&memory, *rip, register_size,
+                    let (mut op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                                         RegOrOpcode::Register,
                                                                         ImmediateSize::None,
-                                                                        decoder_flags | DecoderFlags::REVERSED_REGISTER_DIRECTION);
-                    override_argument_size(&memory, *rip, &mut argument, ArgumentSize::Bit16, &decoder_flags);
+                                                                        flags | Flags::REVERSED_REGISTER_DIRECTION);
+                    override_argument_size(&memory, *rip, &mut op, ArgumentSize::Bit16, &flags);
                     *rip += ip_offset;
-                    (Opcode::Movsx, argument)
+                    (Opcode::Movsx, op)
                 }
                 unknown => panic!("Unknown instruction: 0F {:X}", unknown),
             }
@@ -1186,15 +1097,13 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
     }
 }
 
-    fn read_immediate_8bit(memory: &Memory, rip: &mut i64) -> Instruction {
-        let immediate = memory.get_i8(*rip, 1) as i64;
-        *rip += 2;
-        InstructionBuilder::new().first_argument(Argument::Immediate { immediate }).finalize()
-    }
+fn read_immediate_8bit(memory: &Memory, rip: &mut i64) -> Instruction {
+    let immediate = memory.get_i8(*rip, 1) as i64;
+    *rip += 2;
+    Instruction{ arguments: (Some(Argument::Immediate{ immediate }), None, None), ..Default::default()}
+}
 
-
-    fn get_argument(memory : &Memory, rip: i64,
-    register_size: RegisterSize, reg_or_opcode: RegOrOpcode, immediate_size: ImmediateSize, mut decoder_flags: DecoderFlags) -> (Instruction, i64) {
+fn get_argument(memory : &Memory, rip: i64, register_size: RegisterSize, reg_or_opcode: RegOrOpcode, immediate_size: ImmediateSize, mut flags: Flags) -> (Instruction, i64) {
         let modrm = memory.get_u8(rip, 1);
         let mut address_mod = modrm >> 6;
         match address_mod {
@@ -1222,7 +1131,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
                                 let base = sib & 0b00000111;
                                 if base == 0x5 {
                                     let displacement = memory.get_i32(rip, offset);
-                                    decoder_flags |= DecoderFlags::SIB_DISPLACEMENT_ONLY;
+                                    flags |= Flags::SIB_DISPLACEMENT_ONLY;
                                     (displacement, 4)
                                 } else {
                                     (0, 0)
@@ -1264,27 +1173,23 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
                         let register = if address_mod == 0b00 && rm == 0x5 {
                             Register::RIP
                         } else {
-                            let register_size = if decoder_flags.contains(DecoderFlags::ADDRESS_SIZE_OVERRIDE) {
+                            let register_size = if flags.contains(Flags::ADDRESS_SIZE_OVERRIDE) {
                                 RegisterSize::Bit32
                             } else {
                                 RegisterSize::Bit64
                             };
-                            get_register(rm, register_size, decoder_flags.contains(DecoderFlags::NEW_64BIT_REGISTER),
-                                         decoder_flags.contains(DecoderFlags::NEW_8BIT_REGISTER))
+                            get_register(rm, register_size, flags.contains(Flags::NEW_64BIT_REGISTER),
+                                         flags.contains(Flags::NEW_8BIT_REGISTER))
                         };
 
-                        (InstructionBuilder::new().first_argument(Argument::Immediate {
-                                 immediate: immediate as i64,
-                             })
-                             .second_argument(effective_address(sib, register, displacement, decoder_flags))
-                             .opcode(register_or_opcode)
-                             .explicit_size(argument_size)
-                             .finalize(),
+                        (Instruction{ arguments: (Some(Argument::Immediate{ immediate: immediate as i64 }),
+                                                                Some(effective_address(sib, register, displacement, flags)), None),
+                                            opcode: Some(register_or_opcode), explicit_size: Some(argument_size), ..Default::default() },
                          ip_offset + 1)
                     }
                     ImmediateSize::Bit32 => {
                         assert!(reg_or_opcode == RegOrOpcode::Opcode);
-                        let immediate = if decoder_flags.contains(DecoderFlags::OPERAND_16_BIT) {
+                        let immediate = if flags.contains(Flags::OPERAND_16_BIT) {
                             ip_offset += 2;
                             memory.get_i16(rip, ip_offset - 2) as i64
                         } else {
@@ -1303,26 +1208,21 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
                         let register = if address_mod == 0b00 && rm == 0x5 {
                             Register::RIP
                         } else {
-                            let register_size = if decoder_flags.contains(DecoderFlags::ADDRESS_SIZE_OVERRIDE) {
+                            let register_size = if flags.contains(Flags::ADDRESS_SIZE_OVERRIDE) {
                                 RegisterSize::Bit32
                             } else {
                                 RegisterSize::Bit64
                             };
-                            get_register(rm, register_size, decoder_flags.contains(DecoderFlags::NEW_64BIT_REGISTER),
-                                         decoder_flags.contains(DecoderFlags::NEW_8BIT_REGISTER))
+                            get_register(rm, register_size, flags.contains(Flags::NEW_64BIT_REGISTER),
+                                         flags.contains(Flags::NEW_8BIT_REGISTER))
                         };
 
-                        (InstructionBuilder::new().first_argument(Argument::Immediate {
-                                 immediate: immediate,
-                             })
-                             .second_argument(effective_address(sib, register, displacement, decoder_flags))
-                             .opcode(register_or_opcode)
-                             .explicit_size(argument_size)
-                             .finalize(),
+                        (Instruction{ arguments: (Some(Argument::Immediate{ immediate }), Some(effective_address(sib, register, displacement, flags)), None),
+                                            opcode: Some(register_or_opcode), explicit_size: Some(argument_size), ..Default::default() },
                          ip_offset)
                     }
                     ImmediateSize::None => {
-                        let first_reg_size = if decoder_flags.contains(DecoderFlags::ADDRESS_SIZE_OVERRIDE) {
+                        let first_reg_size = if flags.contains(Flags::ADDRESS_SIZE_OVERRIDE) {
                             RegisterSize::Bit32
                         } else {
                             RegisterSize::Bit64
@@ -1334,37 +1234,28 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
                         } else {
                             get_register(rm,
                                          first_reg_size,
-                                         decoder_flags.contains(DecoderFlags::NEW_64BIT_REGISTER),
-                                         decoder_flags.contains(DecoderFlags::NEW_8BIT_REGISTER))
+                                         flags.contains(Flags::NEW_64BIT_REGISTER),
+                                         flags.contains(Flags::NEW_8BIT_REGISTER))
                         };
 
                         (match reg_or_opcode {
                             RegOrOpcode::Register => {
                                 let register2 = get_register(register_or_opcode,
                                                             register_size,
-                                                            decoder_flags.contains(DecoderFlags::MOD_R_M_EXTENSION),
-                                                            decoder_flags.contains(DecoderFlags::NEW_8BIT_REGISTER));
+                                                            flags.contains(Flags::MOD_R_M_EXTENSION),
+                                                            flags.contains(Flags::NEW_8BIT_REGISTER));
 
-                                if decoder_flags.contains(DecoderFlags::REVERSED_REGISTER_DIRECTION) {
-                                    InstructionBuilder::new().first_argument(effective_address(sib, register1, displacement, decoder_flags))
-                                    .second_argument(
-                                        Argument::Register {
-                                            register: register2,
-                                        }).finalize()
+                                if flags.contains(Flags::REVERSED_REGISTER_DIRECTION) {
+                                    Instruction{ arguments: (Some(effective_address(sib, register1, displacement, flags)), Some(Argument::Register{ register: register2 }), None),
+                                                       ..Default::default()}
                                 } else {
-                                    InstructionBuilder::new().first_argument(Argument::Register {
-                                            register: register2,
-                                        })
-                                        .second_argument(effective_address(sib, register1, displacement, decoder_flags))
-                                        .finalize()
+                                    Instruction{ arguments: (Some(Argument::Register{ register: register2 }),
+                                                                           Some(effective_address(sib, register1, displacement, flags)), None), ..Default::default() }
                                 }
                             },
                             RegOrOpcode::Opcode => {
-                                InstructionBuilder::new()
-                                    .first_argument(effective_address(sib, register1, displacement, decoder_flags))
-                                    .opcode(register_or_opcode)
-                                    .explicit_size(ArgumentSize::Bit64)
-                                    .finalize()
+                               Instruction{ arguments: (Some(effective_address(sib, register1, displacement, flags)), None, None),
+                                                  opcode: Some(register_or_opcode), explicit_size: Some(ArgumentSize::Bit64), ..Default::default() }
                             }
                         }, ip_offset)
                     }
@@ -1372,35 +1263,25 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
             }
             0b11 => {
                 // register
-                let register1 = get_register(modrm & 0b00000111,
+                let register = get_register(modrm & 0b00000111,
                                              register_size,
-                                             decoder_flags.contains(DecoderFlags::NEW_64BIT_REGISTER),
-                                             decoder_flags.contains(DecoderFlags::NEW_8BIT_REGISTER));
+                                             flags.contains(Flags::NEW_64BIT_REGISTER),
+                                             flags.contains(Flags::NEW_8BIT_REGISTER));
                 let value2 = (modrm & 0b00111000) >> 3;
                 match reg_or_opcode {
                     RegOrOpcode::Register => {
-                        (if decoder_flags.contains(DecoderFlags::REVERSED_REGISTER_DIRECTION) {
-                             InstructionBuilder::new().first_argument(Argument::Register {
-                                     register: register1,
-                                 })
-                                 .second_argument(Argument::Register {
-                                     register:
-                                         get_register(value2,
-                                                      register_size,
-                                                      decoder_flags.contains(DecoderFlags::MOD_R_M_EXTENSION), decoder_flags.contains(DecoderFlags::NEW_8BIT_REGISTER)),
-                                 })
-                                 .finalize()
+                        (if flags.contains(Flags::REVERSED_REGISTER_DIRECTION) {
+                            Instruction{ arguments: (Some(Argument::Register{ register }),
+                                                                   Some(Argument::Register{ register: get_register(value2, register_size,
+                                                                                                                                    flags.contains(Flags::MOD_R_M_EXTENSION),
+                                                                                                                                    flags.contains(Flags::NEW_8BIT_REGISTER)) }),
+                                                                   None), ..Default::default()}
                          } else {
-                             InstructionBuilder::new().first_argument(Argument::Register {
-                                     register:
-                                         get_register(value2,
-                                                      register_size,
-                                                      decoder_flags.contains(DecoderFlags::MOD_R_M_EXTENSION), decoder_flags.contains(DecoderFlags::NEW_8BIT_REGISTER)),
-                                 })
-                                 .second_argument(Argument::Register {
-                                     register: register1,
-                                 })
-                                 .finalize()
+                            Instruction{ arguments: (Some(Argument::Register{ register: get_register(value2, register_size,
+                                                                                                                                    flags.contains(Flags::MOD_R_M_EXTENSION),
+                                                                                                                                    flags.contains(Flags::NEW_8BIT_REGISTER)) }),
+                                                                   Some(Argument::Register{ register }),
+                                                                   None), ..Default::default()}
                          },
                          2)
                     }
@@ -1408,36 +1289,15 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
                         match immediate_size {
                             ImmediateSize::Bit8 => {
                                 let immediate = memory.get_i8(rip, 2);
-                                (InstructionBuilder::new().first_argument(Argument::Immediate {
-                                         immediate: immediate as i64,
-                                     })
-                                     .second_argument(Argument::Register {
-                                         register: register1,
-                                     })
-                                     .opcode(value2)
-                                     .finalize(),
-                                 3)
+                                (Instruction{ arguments: (Some(Argument::Immediate{ immediate: immediate as i64 }), Some(Argument::Register{ register }), None),
+                                                    opcode: Some(value2), ..Default::default()}, 3)
                             }
                             ImmediateSize::Bit32 => {
                                 let immediate = memory.get_i32(rip, 2);
-                                (InstructionBuilder::new().first_argument(Argument::Immediate {
-                                         immediate: immediate as i64,
-                                     })
-                                     .second_argument(Argument::Register {
-                                         register: register1,
-                                     })
-                                     .opcode(value2)
-                                     .finalize(),
-                                 6)
+                                (Instruction{ arguments: (Some(Argument::Immediate{ immediate: immediate as i64 }), Some(Argument::Register{ register }), None),
+                                                    opcode: Some(value2), ..Default::default()}, 6)
                             }
-                            ImmediateSize::None => {
-                                (InstructionBuilder::new().first_argument(Argument::Register {
-                                         register: register1,
-                                     })
-                                     .opcode(value2)
-                                     .finalize(),
-                                 2)
-                            }
+                            ImmediateSize::None => { (Instruction{ arguments: (Some(Argument::Register{ register }), None, None), opcode: Some(value2), ..Default::default()}, 2) }
                         }
                     }
                 }
@@ -1446,7 +1306,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
         }
     }
 
-    fn effective_address(sib: Option<u8>, register: Register, displacement: i32, decoder_flags: DecoderFlags) -> Argument {
+    fn effective_address(sib: Option<u8>, register: Register, displacement: i32, flags: Flags) -> Argument {
         match sib {
             None => {
                 Argument::EffectiveAddress {
@@ -1462,17 +1322,17 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
                 let scale = (sib & 0b11000000) >> 6;
                 let scale = 2u8.pow(scale as u32) as u8;
 
-                let register_size = if decoder_flags.contains(DecoderFlags::ADDRESS_SIZE_OVERRIDE) {
+                let register_size = if flags.contains(Flags::ADDRESS_SIZE_OVERRIDE) {
                     RegisterSize::Bit32
                 } else {
                     RegisterSize::Bit64
                 };
 
                 let base = get_register(base_num, register_size,
-                                       decoder_flags.contains(DecoderFlags::NEW_64BIT_REGISTER), false);
+                                       flags.contains(Flags::NEW_64BIT_REGISTER), false);
 
                 if index == 0x4 {
-                    if base_num == 0x5 && decoder_flags.contains(DecoderFlags::SIB_DISPLACEMENT_ONLY) {
+                    if base_num == 0x5 && flags.contains(Flags::SIB_DISPLACEMENT_ONLY) {
                         Argument::EffectiveAddress {
                             base: None,
                             displacement: displacement,
@@ -1488,13 +1348,13 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
                         }
                     }
                 } else {
-                    if base_num == 0x5 && decoder_flags.contains(DecoderFlags::SIB_DISPLACEMENT_ONLY) {
+                    if base_num == 0x5 && flags.contains(Flags::SIB_DISPLACEMENT_ONLY) {
                         Argument::EffectiveAddress {
                             base: None,
                             displacement: displacement,
                             scale: Some(scale),
                             index: Some(get_register(index, register_size,
-                                                    decoder_flags.contains(DecoderFlags::SIB_EXTENSION), false))
+                                                    flags.contains(Flags::SIB_EXTENSION), false))
                         }
                     } else {
                         Argument::EffectiveAddress {
@@ -1502,7 +1362,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
                             displacement: displacement,
                             scale: Some(scale),
                             index: Some(get_register(index, register_size,
-                                                    decoder_flags.contains(DecoderFlags::SIB_EXTENSION), false))
+                                                    flags.contains(Flags::SIB_EXTENSION), false))
                         }
                     }
                 }
@@ -1510,93 +1370,65 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Instruction) {
         }
     }
 
-    fn decode_8bit_reg_8bit_immediate(memory: &Memory, rip: &mut i64, decoder_flags: DecoderFlags) -> Instruction {
-        let (argument, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
+    fn decode_8bit_reg_8bit_immediate(memory: &Memory, rip: &mut i64, flags: Flags) -> Instruction {
+        let (op, ip_offset) = get_argument(&memory, *rip, RegisterSize::Bit8,
                                                       RegOrOpcode::Register,
                                                       ImmediateSize::None,
-                                                      decoder_flags);
+                                                      flags);
         *rip += ip_offset;
-        argument
+        op
     }
 
-    fn decode_reg_reg(memory: &Memory, rip: &mut i64, register_size: RegisterSize, decoder_flags: DecoderFlags) -> Instruction {
-        let (argument, ip_offset) = get_argument(&memory, *rip, register_size,
+    fn decode_reg_reg(memory: &Memory, rip: &mut i64, register_size: RegisterSize, flags: Flags) -> Instruction {
+        let (op, ip_offset) = get_argument(&memory, *rip, register_size,
                                                       RegOrOpcode::Register,
                                                       ImmediateSize::None,
-                                                      decoder_flags);
+                                                      flags);
         *rip += ip_offset;
-        argument
+        op
     }
 
     fn decode_al_immediate(memory: &Memory, rip: &mut i64) -> Instruction {
         let immediate = memory.get_i8(*rip, 1);
-        let argument =
-            InstructionBuilder::new().first_argument(Argument::Immediate {
-                    immediate: immediate as i64,
-                })
-                .second_argument(Argument::Register {
-                    register: Register::AL,
-                })
-                .finalize();
+        let op = Instruction{ arguments: (Some(Argument::Immediate{ immediate: immediate as i64 }), Some(Argument::Register { register: Register::AL }), None), ..Default::default() };
         *rip += 2;
-        argument
+        op
     }
 
-    fn decode_ax_immediate(memory: &Memory, rip: &mut i64, register_size: RegisterSize, decoder_flags: DecoderFlags) -> Instruction {
-        let (immediate, ip_offset) = if decoder_flags.contains(DecoderFlags::OPERAND_16_BIT) {
+    fn decode_ax_immediate(memory: &Memory, rip: &mut i64, register_size: RegisterSize, flags: Flags) -> Instruction {
+        let (immediate, ip_offset) = if flags.contains(Flags::OPERAND_16_BIT) {
             (memory.get_i16(*rip, 1) as i64, 3)
         } else {
             (memory.get_i32(*rip, 1) as i64, 5)
         };
 
         let register = get_register(0,
-            register_size, decoder_flags.contains(DecoderFlags::NEW_64BIT_REGISTER),
+            register_size, flags.contains(Flags::NEW_64BIT_REGISTER),
             false);
 
-        let argument =
-            InstructionBuilder::new().first_argument(Argument::Immediate {
-                    immediate: immediate,
-                })
-                .second_argument(Argument::Register {
-                    register: register,
-                })
-                .finalize();
+        let op = Instruction{ arguments: (Some(Argument::Immediate{ immediate }), Some(Argument::Register { register }), None), ..Default::default()};
         *rip += ip_offset;
-        argument
+        op
     }
 
-    fn override_argument_size(memory : &Memory, rip: i64, instruction: &mut Instruction, size: ArgumentSize, decoder_flags: &DecoderFlags) {
-        let new_first_argument = match instruction.first_argument {
-            Some(ref first_argument) => {
-                match *first_argument {
-                    Argument::Register {..}=> {
-                        let register_size = match size {
-                            ArgumentSize::Bit8 => RegisterSize::Bit8,
-                            ArgumentSize::Bit16 => RegisterSize::Bit16,
-                            ArgumentSize::Bit32 => RegisterSize::Bit32,
-                            ArgumentSize::Bit64 => RegisterSize::Bit64,
-                        };
-                        let modrm = memory.get_u8(rip, 1);
-                        let register = modrm & 0b00000111;
-                        let register = get_register(register, register_size,
-                                                    decoder_flags.contains(DecoderFlags::NEW_64BIT_REGISTER),
-                                                    decoder_flags.contains(DecoderFlags::NEW_8BIT_REGISTER));
-                        Some(Argument::Register {
-                            register: register,
-                        })
-                    },
-                    Argument::EffectiveAddress {..} => {
-                        instruction.explicit_size = Some(size);
-                        None
-                    },
-                    _ => panic!("Invalid instruction")
-                }
+    fn override_argument_size(memory : &Memory, rip: i64, op: &mut Instruction, size: ArgumentSize, flags: &Flags) {
+        match op.arguments.0 {
+            Some(Argument::Register{..}) => {
+                let register_size = match size {
+                    ArgumentSize::Bit8 => RegisterSize::Bit8,
+                    ArgumentSize::Bit16 => RegisterSize::Bit16,
+                    ArgumentSize::Bit32 => RegisterSize::Bit32,
+                    ArgumentSize::Bit64 => RegisterSize::Bit64,
+                };
+                let modrm = memory.get_u8(rip, 1);
+                let register = modrm & 0b00000111;
+                let register = get_register(register, register_size,
+                                            flags.contains(Flags::NEW_64BIT_REGISTER),
+                                            flags.contains(Flags::NEW_8BIT_REGISTER));
+                op.arguments.0 = Some(Argument::Register{ register })
             },
-            None => panic!("Needs first_argument to override instruction size"),
-        };
-        match new_first_argument {
-            Some(nfa) => instruction.first_argument = Some(nfa),
-            None => (),
+            Some(Argument::EffectiveAddress{..}) => { op.explicit_size = Some(size); },
+            _ => panic!("Invalid instruction")
         }
     }
 
