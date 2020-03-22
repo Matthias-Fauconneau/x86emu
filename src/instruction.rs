@@ -97,6 +97,20 @@ impl Operand {
     }
 }
 
+impl fmt::Display for Operand {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Operand::Register { ref register } => write!(f, "{}", register),
+            Operand::Immediate { immediate } => write!(f, "$0x{:x}", immediate),
+            Operand::EffectiveAddress { displacement, .. } => match displacement.cmp(&0) {
+                std::cmp::Ordering::Less => write!(f, "-{:#x}{}", displacement.abs(), format_effective_address(self)),
+                std::cmp::Ordering::Greater => write!(f, "{:#x}{}", displacement, format_effective_address(self)),
+                std::cmp::Ordering::Equal => write!(f, "0x0{}", format_effective_address(self)),
+            }
+        }
+    }
+}
+
 #[derive(Default,Debug)]
 pub struct Operands {
     pub operands: (Option<Operand>, Option<Operand>, Option<Operand>),
@@ -116,20 +130,6 @@ impl Operands {
             Operand::Immediate { .. } | Operand::EffectiveAddress { .. } => {
                 if let Some(Operand::Register{ register }) = self.operands.1 { return get_register_size(register); }
                 OperandSize::Bit64
-            }
-        }
-    }
-}
-
-impl fmt::Display for Operand {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Operand::Register { ref register } => write!(f, "{}", register),
-            Operand::Immediate { immediate } => write!(f, "$0x{:x}", immediate),
-            Operand::EffectiveAddress { displacement, .. } => match displacement.cmp(&0) {
-                std::cmp::Ordering::Less => write!(f, "-{:#x}{}", displacement.abs(), format_effective_address(self)),
-                std::cmp::Ordering::Greater => write!(f, "{:#x}{}", displacement, format_effective_address(self)),
-                std::cmp::Ordering::Equal => write!(f, "0x0{}", format_effective_address(self)),
             }
         }
     }

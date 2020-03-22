@@ -1186,11 +1186,11 @@ fn get_operands(memory : &Memory, rip: i64, register_size: RegisterSize, reg_or_
                     ImmediateSize::Bit32 => {
                         assert!(reg_or_opcode == RegOrOpcode::Opcode);
                         let immediate = if flags.contains(Flags::OPERAND_16_BIT) {
-                            let value : i16 = memory.read_unaligned(rip as u64);
+                            let value : i16 = memory.get_i16(rip, ip_offset);
                             ip_offset += 2;
                             value as i64
                         } else {
-                            let value : i32 = memory.read_unaligned(rip as u64);
+                            let value : i32 = memory.get_i32(rip, ip_offset);
                             ip_offset += 4;
                             value as i64
                         };

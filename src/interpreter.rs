@@ -4,7 +4,10 @@ use crate::state::State;
 impl State {
 pub fn print(&self, instruction: &str) { if self.print_instructions { instruction::print(instruction); } }
 pub fn print_no_size(&self, instruction: &str, op: &Operands) { if self.print_instructions { instruction::print_no_size(instruction, op) } }
-pub fn print_(&self, instruction: &str, op: &Operands) { if self.print_instructions { instruction::print_(instruction, op) } }
+pub fn print_(&self, instruction: &str, op: &Operands) {
+    if !self.print_instructions { return; }
+    instruction::print_(instruction, op);
+}
 pub fn print_disp(&self, instruction: &str, op: &Operands) { if self.print_instructions { instruction::print_disp(instruction, op, self.rip) } }
 }
 

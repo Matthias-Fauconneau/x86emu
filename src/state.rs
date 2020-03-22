@@ -48,7 +48,7 @@ impl State{
         self.set_flag(Flags::Parity, parity != 0b1)
     }
 
-    pub fn get_value(&mut self, arg: &Operand, operand_size: OperandSize) -> i64 {
+    pub fn get_value(&self, arg: &Operand, operand_size: OperandSize) -> i64 {
         match *arg {
             Operand::Register { register } => self.get_register_value(register),
             Operand::Immediate { immediate } => immediate,
@@ -57,15 +57,15 @@ impl State{
                 match operand_size {
                     OperandSize::Bit8 => self.memory.read_byte(address) as i64,
                     OperandSize::Bit16 => {
-                        let value: i16 = self.memory.read(address);
+                        let value: i16 = self.memory.read_unaligned(address);
                         value as i64
                     }
                     OperandSize::Bit32 => {
-                        let value: i32 = self.memory.read(address);
+                        let value: i32 = self.memory.read_unaligned(address);
                         value as i64
                     }
                     OperandSize::Bit64 => {
-                        let value: i64 = self.memory.read(address);
+                        let value: i64 = self.memory.read_unaligned(address);
                         value
                     }
                 }

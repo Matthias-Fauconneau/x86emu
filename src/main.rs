@@ -1,11 +1,9 @@
-#![feature(abi_efiapi, box_syntax)]
-/*#![allow(incomplete_features)]
-#![feature(const_generics, abi_efiapi, box_syntax)]*/
+#![feature(abi_efiapi, box_syntax,or_patterns)]
 #[macro_use] extern crate bitflags;
 fn address_of<T>(t:&T) -> u64 { t as *const T as u64 }
 mod memory; use memory::{Memory, PAGE_SIZE, raw};
 mod state; use state::State;
-mod instruction; use instruction::{Opcode, Operands};
+mod instruction; use instruction::{Opcode, Operand, Operands};
 mod decoder; use decoder::decode;
 mod interpreter;
 mod dispatch; use dispatch::dispatch;
@@ -15,7 +13,6 @@ pub fn execute<R: addr2line::gimli::read::Reader, Host>
     let mut instruction_cache = fnv::FnvHashMap::<u64,(Opcode, Operands, usize)>::default();
     loop {
         let instruction_start = state.rip as u64;
-        if state.print_instructions { print!("{:x}: ", instruction_start); }
         if let Some(closure) = traps.get(&instruction_start) {
             closure(state, host);
             continue;
@@ -32,9 +29,28 @@ pub fn execute<R: addr2line::gimli::read::Reader, Host>
             }
         };
 
+        let print_before = |state : &State, opcode, op : &Operands| {
+            if let Some(op0 @ (Operand::Register{..} | Operand::EffectiveAddress{..})) = &op.operands.0 { println!("{}=0x{:x}", op0, state.get_value(&op0, op.size())); }
+            if let Opcode::Mov = opcode {} // overwritten
+            else if let Some(op1) = &op.operands.1 { println!("{}=0x{:x}", op1, state.get_value(&op1, op.size())); }
+        };
+        if state.print_instructions { print_before(&state, instruction.0, &instruction.1); }
+        let to_str = |location: &addr2line::Location| format!("{}:{}", location.file.unwrap_or("").rsplit('/').next().unwrap(), location.line.unwrap_or(0));
+        let find_location = |address| Some(to_str(&addr2line.find_location(address).unwrap()?));
+        if state.print_instructions {
+            if let Some(location) = find_location(instruction_start) { print!("{} ", location); }
+            print!("{:x}: ", instruction_start);
+            print!("{:x?}: ", &state.memory.read_bytes(instruction_start, instruction.2).collect::<Vec<_>>());
+        }
         dispatch(state, instruction);
-        let to_str = |location: &addr2line::Location| { format!("{}:{}", location.file.unwrap(), location.line.unwrap()) };
-        assert!(state.rip as u64 != instruction_start, "{:?}", to_str(&addr2line.find_location(state.rip as u64).unwrap().unwrap()));
+        let print_after = |state : &State, opcode, op : &Operands| {
+            if let Opcode::Mov | Opcode::Movsx = opcode {} // unchanged
+            else if let Some(op0 @ (Operand::Register{..} | Operand::EffectiveAddress{..})) = &op.operands.0 { println!("{}=0x{:x}", op0, state.get_value(&op0, op.size())); }
+            if let Some(op1) = &op.operands.1 { println!("{}=0x{:x}", op1, state.get_value(&op1, op.size())); }
+        };
+        if state.print_instructions { print_after(&state, instruction.0, &instruction.1); }
+        assert!(state.rip as u64 != instruction_start, "{}", find_location(state.rip as u64).unwrap());
+        //assert!(state.rip != 0x140002168); // Breakpoint
     }
 }
 
@@ -86,7 +102,9 @@ fn main() {
         for section in pe.sections {
             let page_base = memory.translate(pe.image_base as u64+section.virtual_address as u64)/PAGE_SIZE;
             for (page_index, page) in file[section.pointer_to_raw_data as usize..][..section.size_of_raw_data as usize].chunks(PAGE_SIZE as usize).enumerate() {
-                memory.physical_to_host.insert(page_base+page_index as u64, page.to_vec());
+                let mut page = page.to_vec();
+                page.resize(PAGE_SIZE as usize, 0);
+                memory.physical_to_host.insert(page_base+page_index as u64, page);
             }
         }
         pe.image_base as u64 + pe.entry as u64 // address_of_entry_point
@@ -120,7 +138,6 @@ fn main() {
         let system_table = push!(state, new_system_table(&stdin, &stdout, &stderr, &runtime_services, &boot_services));
 
         traps.insert(state.memory.read(address_of(&stdout.output_string)), box |state,_|{
-            println!("output_string");
             let (_self, string) = (state.rcx, state.rdx); //EFI ABI = MS x64 = RCX, RDX, R8, R9
             let end = {let mut ptr = string; while state.memory.read_unaligned::<u16>(ptr as u64) != 0 { ptr += 2; } ptr};
             let bytes = state.memory.read_bytes(string as u64, (end-string) as usize).collect::<Vec<u8>>();
