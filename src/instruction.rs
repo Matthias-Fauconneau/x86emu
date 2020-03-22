@@ -21,7 +21,7 @@ pub enum Register {
 }
 
 pub enum Flags {
-    Carry = 1 << 0,
+    Carry = 1 /*<< 0*/,
     Parity = 1 << 2,
     Zero = 1 << 6,
     Sign = 1 << 7,
@@ -33,32 +33,32 @@ pub enum Flags {
 impl Default for Repeat { fn default() -> Repeat { Repeat::None } }
 
 #[derive(Clone, Copy, Debug)] pub enum RegisterSize { Bit8, Bit16, Bit32, Bit64, Segment }
-#[derive(Debug, Copy, Clone)] pub enum ArgumentSize { Bit64, Bit32, Bit16, Bit8 }
+#[derive(Debug, Copy, Clone)] pub enum OperandSize { Bit64, Bit32, Bit16, Bit8 }
 
-pub fn get_register_size(reg: &Register) -> ArgumentSize {
-    match *reg {
+pub fn get_register_size(reg: Register) -> OperandSize {
+    match reg {
         Register::RAX | Register::RBX | Register::RCX | Register::RDX | Register::RSP |
         Register::RBP | Register::RSI | Register::RDI | Register::RIP | Register::R8 |
         Register::R9 | Register::R10 | Register::R11 | Register::R12 | Register::R13 |
         Register::R14 | Register::R15 | Register::CR0 | Register::CR2 | Register::CR3 |
-        Register::CR4 | Register::CR8 => ArgumentSize::Bit64,
+        Register::CR4 | Register::CR8 => OperandSize::Bit64,
 
         Register::EAX | Register::EBX | Register::ECX | Register::EDX | Register::ESP |
         Register::EBP | Register::ESI | Register::EDI | Register::R8D | Register::R9D |
         Register::R10D | Register::R11D | Register::R12D | Register::R13D | Register::R14D |
-        Register::R15D => ArgumentSize::Bit32,
+        Register::R15D => OperandSize::Bit32,
 
         Register::AX | Register::CX | Register::DX | Register::BX | Register::SP |
         Register::BP | Register::SI | Register::DI | Register::R8W | Register::R9W |
         Register::R10W | Register::R11W | Register::R12W | Register::R13W | Register::R14W |
         Register::R15W | Register::ES | Register::CS | Register::SS | Register::DS |
-        Register::FS | Register::GS => ArgumentSize::Bit16,
+        Register::FS | Register::GS => OperandSize::Bit16,
 
         Register::AL | Register::CL | Register::DL | Register::BL | Register::AH |
         Register::CH | Register::DH | Register::BH | Register::SPL | Register::BPL |
         Register::SIL | Register::DIL | Register::R8B | Register::R9B |
         Register::R10B | Register::R11B | Register::R12B | Register::R13B | Register::R14B |
-        Register::R15B => ArgumentSize::Bit8,
+        Register::R15B => OperandSize::Bit8,
     }
 }
 
@@ -70,7 +70,7 @@ impl fmt::Display for Register {
 }
 
 #[derive(Debug)]
-pub enum Argument {
+pub enum Operand {
     Immediate { immediate: i64 },
     Register { register: Register },
     EffectiveAddress {
@@ -81,16 +81,16 @@ pub enum Argument {
     },
 }
 
-impl Argument {
-    pub fn format(&self, size: ArgumentSize) -> String {
+impl Operand {
+    pub fn format(&self, size: OperandSize) -> String {
         match *self {
-            Argument::Register {..} | Argument::EffectiveAddress {..} => format!("{}", self),
-            Argument::Immediate { immediate } => {
+            Operand::Register {..} | Operand::EffectiveAddress {..} => format!("{}", self),
+            Operand::Immediate { immediate } => {
                 format!("$0x{:x}", match size {
-                    ArgumentSize::Bit8 => immediate as u8 as u64,
-                    ArgumentSize::Bit16 => immediate as u16 as u64,
-                    ArgumentSize::Bit32 => immediate as u32 as u64,
-                    ArgumentSize::Bit64 => immediate as u64,
+                    OperandSize::Bit8 => immediate as u8 as u64,
+                    OperandSize::Bit16 => immediate as u16 as u64,
+                    OperandSize::Bit32 => immediate as u32 as u64,
+                    OperandSize::Bit64 => immediate as u64,
                 })
             }
         }
@@ -98,61 +98,56 @@ impl Argument {
 }
 
 #[derive(Default,Debug)]
-pub struct Instruction {
-    pub arguments: (Option<Argument>, Option<Argument>, Option<Argument>),
+pub struct Operands {
+    pub operands: (Option<Operand>, Option<Operand>, Option<Operand>),
     pub opcode: Option<u8>,
-    pub explicit_size: Option<ArgumentSize>,
+    pub explicit_size: Option<OperandSize>,
     pub repeat: Repeat,
 }
 
-impl Instruction {
-    //pub fn arg0(&self) -> &Argument { assert!(arguments.1.is_none()); arguments.0.unwrap() }
-    pub fn arg(&self) -> &Argument { assert!(self.arguments.1.is_none()); self.arguments.0.as_ref().unwrap() }
-    pub fn args(&self) -> (&Argument, &Argument) { (self.arguments.0.as_ref().unwrap(), self.arguments.1.as_ref().unwrap()) }
+impl Operands {
+    pub fn op(&self) -> &Operand { assert!(self.operands.1.is_none()); self.operands.0.as_ref().unwrap() }
+    pub fn operands(&self) -> (&Operand, &Operand) { (self.operands.0.as_ref().unwrap(), self.operands.1.as_ref().unwrap()) }
 
-    pub fn size(&self) -> ArgumentSize {
+    pub fn size(&self) -> OperandSize {
         if let Some(explicit_size) = self.explicit_size { return explicit_size; }
-        match self.arguments.0.as_ref().unwrap() {
-            Argument::Register { ref register } => { get_register_size(register) }
-            Argument::Immediate { .. } | Argument::EffectiveAddress { .. } => {
-                if let Some(Argument::Register{ ref register }) = self.arguments.1 { return get_register_size(register); }
-                ArgumentSize::Bit64
+        match *self.operands.0.as_ref().unwrap() {
+            Operand::Register { register } => { get_register_size(register) }
+            Operand::Immediate { .. } | Operand::EffectiveAddress { .. } => {
+                if let Some(Operand::Register{ register }) = self.operands.1 { return get_register_size(register); }
+                OperandSize::Bit64
             }
         }
     }
 }
 
-impl fmt::Display for Instruction {
+impl fmt::Display for Operands {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(arg0) = &self.arguments.0 {
-            write!(f, "{}", arg0.format(self.size()));
-            if let Some(arg1) = &self.arguments.1 { write!(f, ",{}", arg1.format(self.size())); }
+        if let Some(op0) = &self.operands.0 {
+            write!(f, "{}", op0.format(self.size()))?;
+            if let Some(op1) = &self.operands.1 { write!(f, ",{}", op1.format(self.size()))?; }
         }
         Ok(())
     }
 }
 
-impl fmt::Display for Argument {
+impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Argument::Register { ref register } => write!(f, "{}", register),
-            Argument::Immediate { immediate } => write!(f, "$0x{:x}", immediate),
-            Argument::EffectiveAddress { displacement, .. } => {
-                if displacement < 0 {
-                    write!(f, "-{:#x}{}", displacement.abs(), format_effective_address(self))
-                } else if displacement > 0 {
-                    write!(f, "{:#x}{}", displacement, format_effective_address(self))
-                } else {
-                    write!(f, "0x0{}", format_effective_address(self))
-                }
+            Operand::Register { ref register } => write!(f, "{}", register),
+            Operand::Immediate { immediate } => write!(f, "$0x{:x}", immediate),
+            Operand::EffectiveAddress { displacement, .. } => match displacement.cmp(&0) {
+                std::cmp::Ordering::Less => write!(f, "-{:#x}{}", displacement.abs(), format_effective_address(self)),
+                std::cmp::Ordering::Greater => write!(f, "{:#x}{}", displacement, format_effective_address(self)),
+                std::cmp::Ordering::Equal => write!(f, "0x0{}", format_effective_address(self)),
             }
         }
     }
 }
 
-fn format_effective_address(arg: &Argument) -> String {
-    match *arg {
-        Argument::EffectiveAddress { ref base, ref index, scale, .. } => {
+fn format_effective_address(op: &Operand) -> String {
+    match *op {
+        Operand::EffectiveAddress { ref base, ref index, scale, .. } => {
             match *index {
                 None => {
                     match *base {
@@ -273,17 +268,17 @@ pub enum Opcode {
 }
 
 pub fn print(instruction: &str) { println!("{:<6}", instruction); }
-pub fn print_no_size(instruction: &str, arg: &Instruction) { println!("{:<6} {}", instruction, arg); }
-pub fn print_(instruction: &str, arg: &Instruction) {
-    match arg.explicit_size {
+pub fn print_no_size(instruction: &str, op: &Operands) { println!("{:<6} {}", instruction, op); }
+pub fn print_(instruction: &str, op: &Operands) {
+    match op.explicit_size {
         Some(size) => {
             match size {
-                ArgumentSize::Bit8 => println!("{:<6} {}", instruction.to_owned() + "b", arg),
-                ArgumentSize::Bit16 => println!("{:<6} {}", instruction.to_owned() + "w", arg),
-                ArgumentSize::Bit32 => println!("{:<6} {}", instruction.to_owned() + "l", arg),
-                ArgumentSize::Bit64 => println!("{:<6} {}", instruction.to_owned() + "q", arg),
+                OperandSize::Bit8 => println!("{:<6} {}", instruction.to_owned() + "b", op),
+                OperandSize::Bit16 => println!("{:<6} {}", instruction.to_owned() + "w", op),
+                OperandSize::Bit32 => println!("{:<6} {}", instruction.to_owned() + "l", op),
+                OperandSize::Bit64 => println!("{:<6} {}", instruction.to_owned() + "q", op),
             }
         },
-        None => println!("{:<6} {}", instruction, arg),
+        None => println!("{:<6} {}", instruction, op),
     }
 }

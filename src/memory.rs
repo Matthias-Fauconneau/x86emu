@@ -8,13 +8,13 @@ pub fn from_raw<T>(raw : &[u8]) -> T {
     unsafe{value.assume_init()}
 }
 
-const PAGE_SIZE: u64 = 4096;
+pub const PAGE_SIZE: u64 = 0x1000;
 fn is_aligned(virtual_address: u64, size: usize) -> bool { size.is_power_of_two() && virtual_address%(size as u64)==0 && size<=PAGE_SIZE as usize }
 
 #[derive(Default)]
 pub struct Memory {
     pub cr3: i64,
-    physical_to_host: fnv::FnvHashMap<u64, Vec<u8>>
+    pub physical_to_host: fnv::FnvHashMap<u64, Vec<u8>>
 }
 
 impl Memory {
@@ -24,7 +24,7 @@ impl Memory {
         }
     }
 
-    fn translate(&self, address: u64) -> u64 {
+    pub fn translate(&self, address: u64) -> u64 {
         let cr3 = self.cr3 as u64;
         if cr3 == 0 {
             address
@@ -46,7 +46,7 @@ impl Memory {
 
     fn read_aligned_physical(&self, physical_address: u64, size: usize) -> &[u8] {
         assert!(is_aligned(physical_address, size), "unaligned read {:x} {}", physical_address, size);
-        let page = self.physical_to_host.get(&(physical_address/PAGE_SIZE)).expect(&format!("read {:x} {}",physical_address, size));
+        let page = self.physical_to_host.get(&(physical_address/PAGE_SIZE)).unwrap_or_else(|| panic!("read {:x} {}",physical_address, size));
         let offset = (physical_address%PAGE_SIZE) as usize;
         &page[offset..offset+size]
     }
@@ -55,7 +55,7 @@ impl Memory {
     pub fn write_aligned(&mut self, virtual_address: u64, value: &[u8]) {
         assert!(is_aligned(virtual_address, value.len()), "unaligned write {:x} {}", virtual_address, value.len());
         let physical_address = self.translate(virtual_address);
-        let page = self.physical_to_host.get_mut(&(physical_address/PAGE_SIZE)).expect(&format!("write {:x} {}",physical_address, value.len()));
+        let page = self.physical_to_host.get_mut(&(physical_address/PAGE_SIZE)).unwrap_or_else(|| panic!("write {:x} {}",physical_address, value.len()));
         let offset = (physical_address%PAGE_SIZE) as usize;
         page[offset..offset+value.len()].copy_from_slice(value);
     }
@@ -72,9 +72,9 @@ impl Memory {
         let line_size = size.next_power_of_two();
         let offset = (virtual_address%line_size as u64) as usize;
         let split = line_size-offset;
-        let line = self.read_aligned((virtual_address+0     )/line_size as u64*line_size as u64, line_size);
+        let line = self.read_aligned((virtual_address                         )/line_size as u64*line_size as u64, line_size);
         let mut value = std::mem::MaybeUninit::uninit();
-        if split > size { raw_mut(&mut value).copy_from_slice(&line[offset..]); }
+        if split > size { raw_mut(&mut value).copy_from_slice(&line[offset..][..size]); }
         else {
             raw_mut(&mut value)[..split].copy_from_slice(&line[offset..]);
             let line = self.read_aligned((virtual_address+size as u64)/line_size as u64*line_size as u64, line_size);
@@ -82,7 +82,6 @@ impl Memory {
         }
         unsafe{value.assume_init()}
     }
-
 
     /*fn read_unaligned(&self, virtual_address: u64, target: &mut [u8]) {
         assert_eq!(virtual_address%8==0 && target.len() <= 8); // Unaligned access might stride guest pages
@@ -135,14 +134,11 @@ impl Memory {
     }*/
 
     pub fn write<T>(&mut self, virtual_address: u64, value: &T) { self.write_aligned(virtual_address, raw(value)) }
+    //pub fn write<T>(&mut self, virtual_address: u64, value: T) { self.write_aligned(virtual_address, raw(&value)) }
 
     //pub fn write_bytes(&mut self, virtual_address: u64, data: &[u8]) { for offset in 0..data.len() { self.write_aligned(virtual_address+offset as u64, &[data[offset]]) } }
     pub fn write_bytes<Bytes:IntoIterator<Item=u8>>(&mut self, virtual_address: u64, bytes: Bytes) {
-        let mut offset = 0;
-        for byte in bytes {
-            self.write_byte(virtual_address+offset as u64, byte);
-            offset += 1;
-        }
+        for (offset, byte) in bytes.into_iter().enumerate() { self.write_byte(virtual_address+offset as u64, byte); }
     }
 
     //pub fn mem_write(&mut self, virtual_address: u64, data: &[u8]) { self.write_bytes(virtual_address, data); }

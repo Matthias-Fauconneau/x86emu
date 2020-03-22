@@ -1,4 +1,4 @@
-use crate::{memory::Memory, instruction::{Argument, Register, Flags, ArgumentSize}};
+use crate::{memory::Memory, instruction::{Operand, Register, Flags, OperandSize}};
 
 #[derive(Default)]
 pub struct State {
@@ -29,13 +29,13 @@ impl State{
         }
     }
 
-    pub fn compute_flags(&mut self, result: i64, argument_size: ArgumentSize) {
+    pub fn compute_flags(&mut self, result: i64, operand_size: OperandSize) {
         self.set_flag(Flags::Zero, result == 0);
-        let sign = match argument_size {
-            ArgumentSize::Bit8 => (result as u64) & 0x80 != 0,
-            ArgumentSize::Bit16 => (result as u64) & 0x8000 != 0,
-            ArgumentSize::Bit32 => (result as u64) & 0x80000000 != 0,
-            ArgumentSize::Bit64 => (result as u64) & 0x8000000000000000 != 0,
+        let sign = match operand_size {
+            OperandSize::Bit8 => (result as u64) & 0x80 != 0,
+            OperandSize::Bit16 => (result as u64) & 0x8000 != 0,
+            OperandSize::Bit32 => (result as u64) & 0x80000000 != 0,
+            OperandSize::Bit64 => (result as u64) & 0x8000000000000000 != 0,
         };
         self.set_flag(Flags::Sign, sign);
 
@@ -48,23 +48,23 @@ impl State{
         self.set_flag(Flags::Parity, parity != 0b1)
     }
 
-    pub fn get_value(&mut self, arg: &Argument, argument_size: ArgumentSize) -> i64 {
+    pub fn get_value(&mut self, arg: &Operand, operand_size: OperandSize) -> i64 {
         match *arg {
-            Argument::Register { ref register } => self.get_register_value(register),
-            Argument::Immediate { immediate } => immediate,
-            Argument::EffectiveAddress { .. } => {
+            Operand::Register { register } => self.get_register_value(register),
+            Operand::Immediate { immediate } => immediate,
+            Operand::EffectiveAddress { .. } => {
                 let address = self.calculate_effective_address(arg);
-                match argument_size {
-                    ArgumentSize::Bit8 => self.memory.read_byte(address) as i64,
-                    ArgumentSize::Bit16 => {
+                match operand_size {
+                    OperandSize::Bit8 => self.memory.read_byte(address) as i64,
+                    OperandSize::Bit16 => {
                         let value: i16 = self.memory.read(address);
                         value as i64
                     }
-                    ArgumentSize::Bit32 => {
+                    OperandSize::Bit32 => {
                         let value: i32 = self.memory.read(address);
                         value as i64
                     }
-                    ArgumentSize::Bit64 => {
+                    OperandSize::Bit64 => {
                         let value: i64 = self.memory.read(address);
                         value
                     }
@@ -73,8 +73,8 @@ impl State{
         }
     }
 
-    pub fn get_register_value(&self, register: &Register) -> i64 {
-        match *register {
+    pub fn get_register_value(&self, register: Register) -> i64 {
+        match register {
             Register::RAX => self.rax,
             Register::RBX => self.rbx,
             Register::RCX => self.rcx,
@@ -172,8 +172,8 @@ impl State{
         }
     }
 
-    pub fn set_register_value(&mut self, register: &Register, value: i64) {
-        match *register {
+    pub fn set_register_value(&mut self, register: Register, value: i64) {
+        match register {
             // 64 Bit
             Register::RAX => self.rax = value,
             Register::RBX => self.rbx = value,
@@ -291,34 +291,34 @@ impl State{
         }
     }
 
-    pub fn set_value(&mut self, value: i64, arg: &Argument, argument_size: ArgumentSize) {
+    pub fn set_value(&mut self, value: i64, arg: &Operand, operand_size: OperandSize) {
         match *arg {
-            Argument::Register { ref register } => {
+            Operand::Register { register } => {
                 self.set_register_value(register, value)
             }
-            Argument::EffectiveAddress { .. } => {
+            Operand::EffectiveAddress { .. } => {
                 let address = self.calculate_effective_address(arg);
-                match argument_size {
-                    ArgumentSize::Bit8   => self.memory.write(address, &(value as i8)),
-                    ArgumentSize::Bit16 => self.memory.write(address, &(value as i16)),
-                    ArgumentSize::Bit32 => self.memory.write(address, &(value as i32)),
-                    ArgumentSize::Bit64 => self.memory.write(address, &(value as i64)),
+                match operand_size {
+                    OperandSize::Bit8   => self.memory.write(address, &(value as i8)),
+                    OperandSize::Bit16 => self.memory.write(address, &(value as i16)),
+                    OperandSize::Bit32 => self.memory.write(address, &(value as i32)),
+                    OperandSize::Bit64 => self.memory.write(address, &(value as i64)),
                 }
             }
-            Argument::Immediate { .. } => panic!("Cannot set value on immediate value"),
+            Operand::Immediate { .. } => panic!("Cannot set value on immediate value"),
         }
     }
 
-    pub fn calculate_effective_address(&self, arg: &Argument) -> u64 {
+    pub fn calculate_effective_address(&self, arg: &Operand) -> u64 {
         match *arg {
-            Argument::EffectiveAddress { ref base, ref index, scale, displacement} => {
+            Operand::EffectiveAddress { ref base, ref index, scale, displacement} => {
                 let mut address = match *base {
-                    Some(ref base) => self.get_register_value(&base),
+                    Some(base) => self.get_register_value(base),
                     None => 0,
                 };
                 address += match *index {
                     None => 0,
-                    Some(ref index) => self.get_register_value(index) * scale.unwrap() as i64,
+                    Some(index) => self.get_register_value(index) * scale.unwrap() as i64,
                 };
                 address += displacement as i64;
                 address as u64
