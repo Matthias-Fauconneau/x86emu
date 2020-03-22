@@ -47,13 +47,19 @@ impl Memory {
         }
     }
 
-    fn read_aligned_physical(&self, physical_address: u64, size: usize) -> &[u8] {
+    fn try_read_aligned_physical(&self, physical_address: u64, size: usize) -> Option<&[u8]> {
         assert!(is_aligned(physical_address, size), "unaligned read {:x} {}", physical_address, size);
-        let page = self.physical_to_host.get(&(physical_address/PAGE_SIZE)).unwrap_or_else(|| panic!("read {:x} {}",physical_address, size));
+        let page = self.physical_to_host.get(&(physical_address/PAGE_SIZE))?;
         let offset = (physical_address%PAGE_SIZE) as usize;
-        &page[offset..offset+size]
+        Some(&page[offset..offset+size])
     }
-    fn read_aligned(&self, virtual_address: u64, size: usize) -> &[u8] { self.read_aligned_physical(self.translate(virtual_address), size) }
+
+    pub fn try_read_aligned(&self, virtual_address: u64, size: usize) -> Option<&[u8]> {
+        self.try_read_aligned_physical(self.translate(virtual_address), size)
+    }
+    fn read_aligned(&self, virtual_address: u64, size: usize) -> &[u8] {
+        self.try_read_aligned(virtual_address, size).unwrap_or_else(|| panic!("read {:x} {}", virtual_address, size))
+    }
 
     pub fn write_aligned(&mut self, virtual_address: u64, value: &[u8]) {
         assert!(is_aligned(virtual_address, value.len()), "unaligned write {:x} {}", virtual_address, value.len());

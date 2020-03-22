@@ -9,14 +9,16 @@ mod interpreter;
 mod dispatch; use dispatch::dispatch;
 
 pub fn execute<R: addr2line::gimli::read::Reader, Host>
-(state : &mut State, addr2line : &addr2line::Context<R>, traps: &fnv::FnvHashMap<u64, Box<dyn Fn(&mut State, &Host)>>, host: &Host) {
+(state : &mut State, addr2line : &addr2line::Context<R>, traps: &fnv::FnvHashMap<u64, Box<dyn Fn(&mut State, &Host)->u64>>, host: &Host) {
     let mut instruction_cache = fnv::FnvHashMap::<u64,(Opcode, Operands, usize)>::default();
     loop {
         let instruction_start = state.rip as u64;
-        if let Some(closure) = traps.get(&instruction_start) {
-            closure(state, host);
-            continue;
-        }
+
+        let find_location = |address| {
+            if let Ok(Some(location)) = addr2line.find_location(address) { format!("{}:{}", location.file.unwrap_or("").rsplit('/').next().unwrap(), location.line.unwrap_or(0)) }
+            else { Default::default() }
+        };
+
         let instruction = match instruction_cache.entry(instruction_start) {
             std::collections::hash_map::Entry::Occupied(entry) => {
                 let instruction = entry.into_mut(); // Outlives entry unlike get
@@ -24,7 +26,7 @@ pub fn execute<R: addr2line::gimli::read::Reader, Host>
                 instruction
             },
             std::collections::hash_map::Entry::Vacant(slot) => {
-                let instruction = decode(&mut state.rip, &state.memory);
+                let instruction = decode(&mut state.rip, &state.memory); //.unwrap_or_else(|| panic!("{}", find_location(instruction_start).unwrap()));
                 slot.insert((instruction.0, instruction.1, ((state.rip as u64) - instruction_start) as usize))
             }
         };
@@ -35,10 +37,8 @@ pub fn execute<R: addr2line::gimli::read::Reader, Host>
             else if let Some(op1) = &op.operands.1 { println!("{}=0x{:x}", op1, state.get_value(&op1, op.size())); }
         };
         if state.print_instructions { print_before(&state, instruction.0, &instruction.1); }
-        let to_str = |location: &addr2line::Location| format!("{}:{}", location.file.unwrap_or("").rsplit('/').next().unwrap(), location.line.unwrap_or(0));
-        let find_location = |address| Some(to_str(&addr2line.find_location(address).unwrap()?));
         if state.print_instructions {
-            if let Some(location) = find_location(instruction_start) { print!("{} ", location); }
+            print!("{} ", find_location(instruction_start));
             print!("{:x}: ", instruction_start);
             print!("{:x?}: ", &state.memory.read_bytes(instruction_start, instruction.2).collect::<Vec<_>>());
         }
@@ -49,8 +49,13 @@ pub fn execute<R: addr2line::gimli::read::Reader, Host>
             if let Some(op1) = &op.operands.1 { println!("{}=0x{:x}", op1, state.get_value(&op1, op.size())); }
         };
         if state.print_instructions { print_after(&state, instruction.0, &instruction.1); }
-        assert!(state.rip as u64 != instruction_start, "{}", find_location(state.rip as u64).unwrap());
-        //assert!(state.rip != 0x140002168); // Breakpoint
+
+        if let Some(closure) = traps.get(&(state.rip as u64)) {
+            state.rax = closure(state, host) as i64;
+            interpreter::ret(state);
+        }
+        assert!(state.rip as u64 != instruction_start, "{}", find_location(state.rip as u64));
+        state.memory.try_read_aligned(state.rip as u64, 1).or_else(|| panic!("{:x} {}", instruction_start, find_location(instruction_start)) );
     }
 }
 
@@ -123,59 +128,67 @@ fn main() {
 
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
     type Host = AtomicUsize;
-    let mut traps : fnv::FnvHashMap<u64, Box<dyn Fn(&mut state::State, &Host)>> = fnv::FnvHashMap::default();
+    let mut traps : fnv::FnvHashMap<u64, Box<dyn Fn(&mut state::State, &Host)->u64>> = fnv::FnvHashMap::default();
 
     // UEFI
-    let image_handle = 0;
-    let system_table = {
-        use crate::uefi::*;
-        let stdin = push!(state, new_input());
-        let output_data = push!(state, new_output_data());
-        let stdout = push!(state, new_output(&output_data));
-        let stderr = push!(state, new_output(&output_data));
-        let runtime_services = push!(state, new_runtime_services());
-        let boot_services = push!(state, new_boot_services());
-        let system_table = push!(state, new_system_table(&stdin, &stdout, &stderr, &runtime_services, &boot_services));
+    use crate::uefi::*;
+    let stdin = push!(state, new_input());
+    let output_data = push!(state, new_output_data());
+    let stdout = push!(state, new_output(&output_data));
+    let stderr = push!(state, new_output(&output_data));
+    let runtime_services = push!(state, new_runtime_services());
+    let boot_services = push!(state, new_boot_services());
+    let system_table = push!(state, new_system_table(&stdin, &stdout, &stderr, &runtime_services, &boot_services));
 
-        traps.insert(state.memory.read(address_of(&stdout.output_string)), box |state,_|{
-            let (_self, string) = (state.rcx, state.rdx); //EFI ABI = MS x64 = RCX, RDX, R8, R9
-            let end = {let mut ptr = string; while state.memory.read_unaligned::<u16>(ptr as u64) != 0 { ptr += 2; } ptr};
-            let bytes = state.memory.read_bytes(string as u64, (end-string) as usize).collect::<Vec<u8>>();
-            use std::io::Write;
-            std::io::stdout().write_all(String::from_utf16(&cast_slice(&bytes)).unwrap().as_bytes()).unwrap();
-            state.rax = 0;
-            interpreter::ret(state);
-        });
+    traps.insert(state.memory.read(address_of(&stdout.output_string)), box |state,_|{
+        let (_self, string) = (state.rcx, state.rdx); //EFI ABI = MS x64 = RCX, RDX, R8, R9
+        let end = {let mut ptr = string; while state.memory.read_unaligned::<u16>(ptr as u64) != 0 { ptr += 2; } ptr};
+        let bytes = state.memory.read_bytes(string as u64, (end-string) as usize).collect::<Vec<u8>>();
+        use std::io::Write;
+        std::io::stdout().write_all(String::from_utf16(&cast_slice(&bytes)).unwrap().as_bytes()).unwrap();
+        0
+    });
 
-        let load_options = "\0".encode_utf16().collect::<Vec<u16>>();
-        let load_options = push_slice!(state, &load_options);
-        let loaded_image = push!(state, new_loaded_image(load_options));
-        traps.insert(state.memory.read(address_of(&boot_services.handle_protocol)), box move |state,_|{
-            let (_self, _protocol_guid, out_protocol) = (state.rcx, state.rdx, state.r8);
-            state.memory.write(out_protocol as u64, &address_of(loaded_image));
-            state.rax = 0;
-            interpreter::ret(state);
-            println!("loaded_image {:x}", state.memory.read::<u64>(address_of(&loaded_image.load_options)));
-        });
+    let load_options = "\0".encode_utf16().collect::<Vec<u16>>();
+    let load_options = push_slice!(state, &load_options);
+    let loaded_image = push!(state, new_loaded_image(load_options));
 
-        traps.insert(state.memory.read(address_of(&boot_services.locate_handle)), box move |state,_|{
-            println!("locate_handle");
-            let (_type, _guid, _key, out_buffer_size, _buffer) = (state.rcx, state.rdx, state.r8, state.r9, state.memory.read::<u64>(state.rsp as u64+8));
-            state.memory.write(out_buffer_size as u64, &1);
-            state.rax = 0;
-            interpreter::ret(state);
-        });
+    let simple_file_system = push!(state, new_simple_file_system());
+    traps.insert(state.memory.read(address_of(&boot_services.handle_protocol)), box move |state,_|{
+        let (handle, _protocol_guid, out_protocol) = (state.rcx, state.rdx, state.r8);
+        /*match handle {
+            image_handle => &address_of(loaded_image)),
+            simple_file_system => &address_of(simple_file_system)
+            _ => unimplemented!()
+        }*/
+        state.memory.write(out_protocol as u64, &handle); // Singletons
+        0
+    });
 
-        traps.insert(state.memory.read(address_of(&boot_services.allocate_pool)), box |state,heap_next|{
-            println!("allocate_pool");
-            let (_pool_type, size, out_buffer) = (state.rcx, state.rdx, state.r8); // MemoryType, usize, &mut *mut u8
-            state.memory.write(out_buffer as u64, &heap_next.fetch_add(size as usize, Relaxed));
-            state.rax = 0;
-            interpreter::ret(state);
-        });
-        address_of(system_table)
-    };
-    state.rcx = image_handle;
-    state.rdx = system_table as i64;
+    traps.insert(state.memory.read(address_of(&boot_services.allocate_pool)), box |state,heap_next|{
+        let (_pool_type, size, out_buffer) = (state.rcx, state.rdx, state.r8); // MemoryType, usize, &mut *mut u8
+        state.memory.write(out_buffer as u64, &heap_next.fetch_add(size as usize, Relaxed));
+        0
+    });
+
+    traps.insert(state.memory.read(address_of(&simple_file_system.open_volume)), box move |state,_|{
+        let (_this, _root) = (state.rcx, state.rdx);
+        unimplemented!();
+    });
+
+    traps.insert(state.memory.read(address_of(&boot_services.locate_handle)), box move |state,_|{
+        let (_type, _guid, _key, out_buffer_size, buffer) = (state.rcx, state.rdx, state.r8, state.r9, state.memory.read::<u64>(state.rsp as u64+8));
+        let size : u64 = state.memory.read(out_buffer_size as u64);
+        state.memory.write(out_buffer_size as u64, &1);
+        if size == 0 { // Only return number of handles
+            assert!(buffer == 0);
+        } else { // Assumes SimpleFileSystem
+            assert!(buffer != 0);
+            state.memory.write(buffer, simple_file_system);
+        }
+        0
+    });
+    state.rcx = address_of(loaded_image) as i64;
+    state.rdx = address_of(system_table) as i64;
     execute(&mut state, &addr2line, &traps, &heap_next);
 }

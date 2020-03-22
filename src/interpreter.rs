@@ -753,7 +753,6 @@ pub fn idiv(state: &mut State, op: &Operands) {
 
 pub fn mul(state: &mut State, op: &Operands) {
     state.print_("mul", &op);
-    println!("mul");
     let operand_size = op.size();
     let a = match operand_size {
         OperandSize::Bit8 => Register::AL,
