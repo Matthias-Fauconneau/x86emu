@@ -5,6 +5,7 @@ impl State {
 pub fn print(&self, instruction: &str) { if self.print_instructions { instruction::print(instruction); } }
 pub fn print_no_size(&self, instruction: &str, op: &Operands) { if self.print_instructions { instruction::print_no_size(instruction, op) } }
 pub fn print_(&self, instruction: &str, op: &Operands) { if self.print_instructions { instruction::print_(instruction, op) } }
+pub fn print_disp(&self, instruction: &str, op: &Operands) { if self.print_instructions { instruction::print_disp(instruction, op, self.rip) } }
 }
 
 fn jmp_iml(state: &mut State, op: &Operands) {
@@ -907,7 +908,7 @@ pub fn scas(state: &mut State, op: &Operands) {
 }
 
 pub fn jmp(state: &mut State, op: &Operands) {
-    state.print_("jmp", &op);
+    state.print_disp("jmp", &op);
     jmp_iml(state, op);
 }
 
@@ -962,7 +963,7 @@ pub fn jbe(state: &mut State, op: &Operands) {
 }
 
 pub fn ja(state: &mut State, op: &Operands) {
-    state.print_("ja", &op);
+    state.print_disp("ja", &op);
     // CF=0 AND ZF=0
     if !state.get_flag(Flags::Carry) && !state.get_flag(Flags::Zero) {
         jmp_iml(state, op);

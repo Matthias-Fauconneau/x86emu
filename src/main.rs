@@ -1,15 +1,17 @@
-#![allow(incomplete_features)]
-#![feature(const_generics, abi_efiapi, box_syntax)]
+#![feature(abi_efiapi, box_syntax)]
+/*#![allow(incomplete_features)]
+#![feature(const_generics, abi_efiapi, box_syntax)]*/
 #[macro_use] extern crate bitflags;
 fn address_of<T>(t:&T) -> u64 { t as *const T as u64 }
-mod memory; use memory::{raw, PAGE_SIZE};
+mod memory; use memory::{Memory, PAGE_SIZE, raw};
 mod state; use state::State;
 mod instruction; use instruction::{Opcode, Operands};
 mod decoder; use decoder::decode;
 mod interpreter;
 mod dispatch; use dispatch::dispatch;
 
-pub fn execute<Host>(state : &mut State, traps: &fnv::FnvHashMap<u64, Box<dyn Fn(&mut State, &Host)>>, host: &Host) {
+pub fn execute<R: addr2line::gimli::read::Reader, Host>
+(state : &mut State, addr2line : &addr2line::Context<R>, traps: &fnv::FnvHashMap<u64, Box<dyn Fn(&mut State, &Host)>>, host: &Host) {
     let mut instruction_cache = fnv::FnvHashMap::<u64,(Opcode, Operands, usize)>::default();
     loop {
         let instruction_start = state.rip as u64;
@@ -31,6 +33,8 @@ pub fn execute<Host>(state : &mut State, traps: &fnv::FnvHashMap<u64, Box<dyn Fn
         };
 
         dispatch(state, instruction);
+        let to_str = |location: &addr2line::Location| { format!("{}:{}", location.file.unwrap(), location.line.unwrap()) };
+        assert!(state.rip as u64 != instruction_start, "{:?}", to_str(&addr2line.find_location(state.rip as u64).unwrap().unwrap()));
     }
 }
 
@@ -40,7 +44,7 @@ pub fn stack_push_bytes(state: &mut State, bytes: &[u8]) {
 }
 pub fn stack_push<T>(state: &mut State, value: &T) {
     assert!(raw(value).len()%8 == 0);
-    stack_push_bytes(state, raw(value)); // opti: 64bit aligned
+    stack_push_bytes(state, raw(value)); // todo opti: 64bit aligned
 }
 fn cast_slice<T,F>(from: &[F]) -> &[T] { unsafe{std::slice::from_raw_parts(from.as_ptr() as *const T, from.len() * std::mem::size_of::<F>() / std::mem::size_of::<T>())} }
 pub fn stack_push_slice<T>(state: &mut State, value: &[T]) {
@@ -72,43 +76,40 @@ macro_rules! push_slice { ($state:expr, $slice:expr) => ({
 mod uefi;
 
 fn main() {
+    let mut memory = Memory::default();
+    let file = std::env::args().skip(1).next().unwrap();
+    let file = std::fs::read(file).unwrap();
+    let object = addr2line::object::File::parse(&file).unwrap();
+    let addr2line = addr2line::Context::new(&object).unwrap();
+    let rip = { // 140001000~140300000
+        let pe = (if let goblin::Object::PE(pe) = goblin::Object::parse(&file).unwrap() { Some(pe) } else { None }).unwrap();
+        for section in pe.sections {
+            let page_base = memory.translate(pe.image_base as u64+section.virtual_address as u64)/PAGE_SIZE;
+            for (page_index, page) in file[section.pointer_to_raw_data as usize..][..section.size_of_raw_data as usize].chunks(PAGE_SIZE as usize).enumerate() {
+                memory.physical_to_host.insert(page_base+page_index as u64, page.to_vec());
+            }
+        }
+        pe.image_base as u64 + pe.entry as u64 // address_of_entry_point
+    };
 
-    let mut state = State::default();
-    state.print_instructions = false;
+    let stack_base = 0x8000_0000_0000;
+    let stack_size : usize = 0x100000;
+    memory.host_allocate_physical(stack_base-(stack_size as u64), stack_size); // 64KB stack
+
+    let heap_base = 0x8000_0000_0000;
+    let heap_next = AtomicUsize::new(0);
+    let heap_size = 0x100000;
+    memory.host_allocate_physical(heap_base, heap_size);
+
+    let mut state = State{memory, rsp: stack_base as i64, rip: rip as i64, print_instructions: false, ..Default::default()};
 
     use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
     type Host = AtomicUsize;
     let mut traps : fnv::FnvHashMap<u64, Box<dyn Fn(&mut state::State, &Host)>> = fnv::FnvHashMap::default();
 
-    { // 140001000~140300000
-        let file = std::env::args().skip(1).next().unwrap();
-        let file = std::fs::read(file).unwrap();
-        let pe = (if let goblin::Object::PE(pe) = goblin::Object::parse(&file).unwrap() { Some(pe) } else { None }).unwrap();
-        for section in pe.sections {
-            let page_base = state.memory.translate(pe.image_base as u64+section.virtual_address as u64)/PAGE_SIZE;
-            for (page_index, page) in file[section.pointer_to_raw_data as usize..][..section.size_of_raw_data as usize].chunks(PAGE_SIZE as usize).enumerate() {
-                state.memory.physical_to_host.insert(page_base+page_index as u64, page.to_vec());
-            }
-        }
-        state.rip = (pe.image_base as u64 + pe.entry as u64) as i64; // address_of_entry_point
-    }
-
-    let stack_base = 0x8000_0000_0000;
-    let stack_size : usize = 0x100000;
-    state.memory.host_allocate_physical(stack_base-(stack_size as u64), stack_size); // 64KB stack
-    state.rsp = stack_base as i64;
-
-    let heap_base = 0x8000_0000_0000;
-    let heap_next = AtomicUsize::new(0);
-    let heap_size = 0x100000;
-    state.memory.host_allocate_physical(heap_base, heap_size);
-
-    // Emulate call to efi_main(image_handle: Handle, system_table: SystemTable<Boot>) from UEFI
-    { // image handle
-        let image_handle = 0;
-        state.rcx = image_handle;
-    }
-    { // system table
+    // UEFI
+    let image_handle = 0;
+    let system_table = {
         use crate::uefi::*;
         let stdin = push!(state, new_input());
         let output_data = push!(state, new_output_data());
@@ -119,11 +120,12 @@ fn main() {
         let system_table = push!(state, new_system_table(&stdin, &stdout, &stderr, &runtime_services, &boot_services));
 
         traps.insert(state.memory.read(address_of(&stdout.output_string)), box |state,_|{
+            println!("output_string");
             let (_self, string) = (state.rcx, state.rdx); //EFI ABI = MS x64 = RCX, RDX, R8, R9
             let end = {let mut ptr = string; while state.memory.read_unaligned::<u16>(ptr as u64) != 0 { ptr += 2; } ptr};
             let bytes = state.memory.read_bytes(string as u64, (end-string) as usize).collect::<Vec<u8>>();
             use std::io::Write;
-            std::io::stdout().write_all(String::from_utf16(&cast_slice(&bytes)).unwrap().as_bytes());
+            std::io::stdout().write_all(String::from_utf16(&cast_slice(&bytes)).unwrap().as_bytes()).unwrap();
             state.rax = 0;
             interpreter::ret(state);
         });
@@ -154,8 +156,9 @@ fn main() {
             state.rax = 0;
             interpreter::ret(state);
         });
-
-        state.rdx = address_of(system_table) as i64;
-    }
-    execute(&mut state, &traps, &heap_next);
+        address_of(system_table)
+    };
+    state.rcx = image_handle;
+    state.rdx = system_table as i64;
+    execute(&mut state, &addr2line, &traps, &heap_next);
 }

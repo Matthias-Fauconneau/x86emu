@@ -5,8 +5,9 @@ authors = ["fotcorn <fotcorn@gmail.com>", "Matthias Fauconneau <matthias.fauconn
 edition = '2018'
 
 [dependencies]
-uefi = { path = "../uefi" }
-goblin = ""
-bitflags = ""
-time = ""
+#object = ""
+addr2line = ""
 fnv = ""
+bitflags = ""
+goblin = ""
+uefi = { path = "../uefi" }

@@ -95,7 +95,7 @@ impl State{
 
             Register::CR0 => self.cr0,
             Register::CR2 => self.cr2,
-            Register::CR3 => self.memory.cr3,
+            Register::CR3 => unimplemented!(), //self.memory.cr3,
             Register::CR4 => self.cr4,
             Register::CR8 => self.cr8,
 
@@ -203,7 +203,7 @@ impl State{
             },
             Register::CR3 => {
                 println!("CR3: {:x}", value);
-                self.memory.cr3 = value
+                unimplemented!(); //self.memory.cr3 = value
             },
             Register::CR4 => {
                 println!("CR4: {:x}", value);

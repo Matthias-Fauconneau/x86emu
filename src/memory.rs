@@ -13,19 +13,14 @@ fn is_aligned(virtual_address: u64, size: usize) -> bool { size.is_power_of_two(
 
 #[derive(Default)]
 pub struct Memory {
-    pub cr3: i64,
     pub physical_to_host: fnv::FnvHashMap<u64, Vec<u8>>
+    //pub cr3: i64,
 }
 
 impl Memory {
-    pub fn host_allocate_physical(&mut self, physical_address: u64, size: usize) {
-        for page_index in physical_address/PAGE_SIZE..(physical_address+(size as u64)+PAGE_SIZE-1)/PAGE_SIZE {
-            self.physical_to_host.insert(page_index, vec![0; PAGE_SIZE as usize]);
-        }
-    }
-
     pub fn translate(&self, address: u64) -> u64 {
-        let cr3 = self.cr3 as u64;
+        address
+        /*let cr3 = self.cr3 as u64;
         if cr3 == 0 {
             address
         } else {
@@ -41,6 +36,14 @@ impl Memory {
             let entry = as_u64(self.read(cr3 + level2 * 8)) >> 12 << 12;
             let entry = as_u64(self.read(cr3 + level3 * 8)) >> 12 << 12;
             entry + page_address*/
+        }*/
+    }
+}
+
+impl Memory {
+    pub fn host_allocate_physical(&mut self, physical_address: u64, size: usize) {
+        for page_index in physical_address/PAGE_SIZE..(physical_address+(size as u64)+PAGE_SIZE-1)/PAGE_SIZE {
+            self.physical_to_host.insert(page_index, vec![0; PAGE_SIZE as usize]);
         }
     }
 

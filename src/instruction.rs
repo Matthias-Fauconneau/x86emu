@@ -121,16 +121,6 @@ impl Operands {
     }
 }
 
-impl fmt::Display for Operands {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(op0) = &self.operands.0 {
-            write!(f, "{}", op0.format(self.size()))?;
-            if let Some(op1) = &self.operands.1 { write!(f, ",{}", op1.format(self.size()))?; }
-        }
-        Ok(())
-    }
-}
-
 impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -142,6 +132,29 @@ impl fmt::Display for Operand {
                 std::cmp::Ordering::Equal => write!(f, "0x0{}", format_effective_address(self)),
             }
         }
+    }
+}
+
+impl Operands {
+    fn fmt(&self, rip : i64) -> String {
+        let mut f = String::new();
+        use std::fmt::Write;
+        if let Some(op0) = &self.operands.0 {
+            write!(f, "{}", op0.format(self.size())).unwrap();
+            if let Some(op1) = &self.operands.1 { write!(f, ",{}", op1.format(self.size())).unwrap(); }
+            if rip != 0 { if let Operand::Immediate{ immediate } = op0 { write!(f, " {:x}", rip+immediate).unwrap(); } }
+        }
+        f
+    }
+}
+impl fmt::Display for Operands {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        /*if let Some(op0) = &self.operands.0 {
+            write!(f, "{}", op0.format(self.size()))?;
+            if let Some(op1) = &self.operands.1 { write!(f, ",{}", op1.format(self.size()))?; }
+        }
+        Ok(())*/
+        write!(f, "{}", self.fmt(0))
     }
 }
 
@@ -281,4 +294,7 @@ pub fn print_(instruction: &str, op: &Operands) {
         },
         None => println!("{:<6} {}", instruction, op),
     }
+}
+pub fn print_disp(instruction: &str, op: &Operands, rip: i64) {
+    println!("{:<6} {}", instruction, op.fmt(rip));
 }
