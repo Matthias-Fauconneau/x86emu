@@ -1,6 +1,6 @@
 //#![feature(abi_efiapi)]
 use {std::{ptr::{null, null_mut}, ffi::c_void}, uefi::{Status, data_types::{Guid, Handle, chars::Char16, Event},
-                proto::{console::text::{RawKey, OutputData, Input, Output}, loaded_image::LoadedImage, media::{fs::SimpleFileSystem, file::FileImpl}},
+                proto::{console::text::{RawKey, OutputData, Input, Output}, loaded_image::LoadedImage, media::{fs::SimpleFileSystem, file::{FileImpl, FileMode, FileAttribute}}},
                 table::{Header,Revision, runtime::{Time, TimeCapabilities, ResetType, RuntimeServices},
                     boot::{Tpl, MemoryDescriptor, MemoryType, MemoryMapKey, EventType, EventNotifyFn, BootServices},
                     SystemTableImpl as SystemTable},
@@ -108,4 +108,20 @@ pub fn new_loaded_image(load_options: &[u16]) -> LoadedImage { LoadedImage{
 
 pub fn new_simple_file_system() -> SimpleFileSystem { SimpleFileSystem {
     revision: 0, open_volume: {extern "efiapi" fn f(_this: &mut SimpleFileSystem, _root: &mut *mut FileImpl) -> uefi::Status { unimplemented!() } f}
+} }
+
+
+pub fn new_file_impl() -> FileImpl { FileImpl {
+    revision: 0,
+    open: {extern "efiapi" fn f(_this: &mut FileImpl, _new_handle: &mut *mut FileImpl, _filename: *const Char16, _open_mode: FileMode, _attributes: FileAttribute) -> Status {
+        unimplemented!() } f},
+    close: {extern "efiapi" fn f(_this: &mut FileImpl) -> Status {unimplemented!() } f},
+    delete: {extern "efiapi" fn f(this: &mut FileImpl) -> Status {unimplemented!() } f},
+    read: {extern "efiapi" fn f(this: &mut FileImpl, buffer_size: &mut usize, buffer: *mut u8) -> Status { unimplemented!() } f},
+    write: {extern "efiapi" fn f(this: &mut FileImpl,buffer_size: &mut usize,buffer: *const u8) -> Status { unimplemented!() } f},
+    get_position: {extern "efiapi" fn f(this: &mut FileImpl, position: &mut u64) -> Status { unimplemented!() } f},
+    set_position: {extern "efiapi" fn f(this: &mut FileImpl, position: u64) -> Status { unimplemented!() } f},
+    get_info: {extern "efiapi" fn f(this: &mut FileImpl,information_type: &Guid,buffer_size: &mut usize,buffer: *mut u8) -> Status { unimplemented!() } f},
+    set_info: {extern "efiapi" fn f(this: &mut FileImpl,information_type: &Guid,buffer_size: usize,buffer: *const c_void) -> Status { unimplemented!() } f},
+    flush: {extern "efiapi" fn f(this: &mut FileImpl) -> Status { unimplemented!() } f},
 } }
