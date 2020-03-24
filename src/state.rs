@@ -1,21 +1,32 @@
 use crate::{memory::Memory, instruction::{Operand, Register, Flags, OperandSize}};
 
-#[derive(Default)]
 pub struct State {
     pub rip: i64,
     pub rax: i64, pub rbx: i64, pub rcx: i64, pub rdx: i64, pub rsp: i64, pub rbp: i64, pub rsi: i64, pub rdi: i64,
     pub r8: i64, pub r9: i64, pub r10: i64, pub r11: i64, pub r12: i64, pub r13: i64, pub r14: i64, pub r15: i64,
     pub rflags: i64,
     pub cr0: i64, pub cr2: i64, /*cr3: memory.cr3,*/ pub cr4: i64, pub cr8: i64,
-    pub gdt: i64,
-    pub idt: i64,
+    pub gdt: i64, pub idt: i64,
 
     pub memory: Memory,
-    pub break_on_access: Vec<(u64, u64)>,
-    pub print_instructions: bool, // Kept in execution context to avoid passing to every instruction execution functions
+    // Kept in execution context to avoid passing to every instruction execution functions
+    pub print_instructions: bool,
+    pub find_location: Box<dyn Fn(u64)->String>
 }
 
 impl State{
+    pub fn new(find_location: Box<dyn Fn(u64)->String>) -> Self { Self{
+        rip: 0,
+        rax: 0, rbx: 0, rcx: 0, rdx: 0, rsp: 0, rbp: 0, rsi: 0, rdi: 0,
+        r8: 0, r9: 0, r10: 0, r11: 0, r12: 0, r13: 0, r14: 0, r15: 0,
+        rflags: 0,
+        cr0: 0, cr2: 0, /*cr3: memory.cr3,*/ cr4: 0, cr8: 0,
+        gdt: 0, idt: 0,
+        memory: Default::default(),
+        print_instructions: false,
+        find_location
+    } }
+
     pub fn get_flag(&self, flag: Flags) -> bool {
         let f = flag as i64;
         self.rflags & f == f

@@ -110,7 +110,6 @@ pub fn new_simple_file_system() -> SimpleFileSystem { SimpleFileSystem {
     revision: 0, open_volume: {extern "efiapi" fn f(_this: &mut SimpleFileSystem, _root: &mut *mut FileImpl) -> uefi::Status { unimplemented!() } f}
 } }
 
-
 pub fn new_file_impl() -> FileImpl { FileImpl {
     revision: 0,
     open: {extern "efiapi" fn f(_this: &mut FileImpl, _new_handle: &mut *mut FileImpl, _filename: *const Char16, _open_mode: FileMode, _attributes: FileAttribute) -> Status {

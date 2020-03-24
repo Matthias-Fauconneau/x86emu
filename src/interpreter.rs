@@ -781,11 +781,13 @@ pub fn imul(state: &mut State, op: &Operands) {
     let operands = op.operands();
     let source0 = state.get_value(&operands.0, operand_size);
     let source1 = state.get_value(&operands.1, operand_size);
-    let result = source0 * source1;
-    state.compute_flags(result, operand_size);
+    let result = source0.overflowing_mul(source1);
+    if let (result, true) = result { panic!("0x{:x}*0x{:x}=0x{:x}", source0, source1, result); }
+    // let result = source0 as i128 * source1 as i128;
+    state.compute_flags(result.0, operand_size);
     match op.operands.2 {
-        Some(ref topet) => state.set_value(result, topet, operand_size),
-        None => state.set_value(result, &operands.1, operand_size),
+        Some(ref topet) => state.set_value(result.0, topet, operand_size),
+        None => state.set_value(result.0, &operands.1, operand_size),
     }
     // TODO:  imul does not set carry/overflow flag
 }
