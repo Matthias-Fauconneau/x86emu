@@ -304,18 +304,16 @@ impl State{
 
     pub fn set_value(&mut self, value: i64, arg: &Operand, operand_size: OperandSize) {
         match *arg {
-            Operand::Register { register } => {
-                self.set_register_value(register, value)
-            }
+            Operand::Register { register } => { self.set_register_value(register, value) },
             Operand::EffectiveAddress { .. } => {
                 let address = self.calculate_effective_address(arg);
                 match operand_size {
                     OperandSize::Bit8   => self.memory.write(address, &(value as i8)),
-                    OperandSize::Bit16 => self.memory.write(address, &(value as i16)),
-                    OperandSize::Bit32 => self.memory.write(address, &(value as i32)),
-                    OperandSize::Bit64 => self.memory.write(address, &(value as i64)),
+                    OperandSize::Bit16 => self.memory.write_unaligned(address, &(value as i16)),
+                    OperandSize::Bit32 => self.memory.write_unaligned(address, &(value as i32)),
+                    OperandSize::Bit64 => self.memory.write_unaligned(address, &(value as i64)),
                 }
-            }
+            },
             Operand::Immediate { .. } => panic!("Cannot set value on immediate value"),
         }
     }

@@ -72,8 +72,6 @@ impl Memory {
     pub fn read_byte(&self, virtual_address: u64) -> u8 { self.read_aligned(virtual_address, 1)[0] }
     pub fn write_byte(&mut self, virtual_address: u64, value: u8) { self.write_aligned(virtual_address, raw(&value)) }
 
-    pub fn mem_read_byte(&self, virtual_address: u64) -> u8 { self.read_byte(virtual_address) }
-
     pub fn read<T>(&self, virtual_address: u64) -> T { from_raw(self.read_aligned(virtual_address, std::mem::size_of::<T>())) }
 
     pub fn read_unaligned<T>(&self, virtual_address: u64) -> T {
@@ -91,23 +89,6 @@ impl Memory {
         }
         unsafe{value.assume_init()}
     }
-
-    /*fn read_unaligned(&self, virtual_address: u64, target: &mut [u8]) {
-        assert_eq!(virtual_address%8==0 && target.len() <= 8); // Unaligned access might stride guest pages
-        let physical_address = self.translate_virtual_to_physical_address(virtual_address);
-        let page = self.physical_to_host.get(&(physical_address/PAGE_SIZE)).expect(&format!("{:x} {}",physical_address, target.len()));
-        let offset = (physical_address%PAGE_SIZE) as usize;
-        target.copy_from_slice(page[offset..offset+target.len()]);
-    }*/
-
-    /*pub fn mem_read(&self, virtual_address: u64, size: usize) -> Vec<u8> {
-        let mut target = std::vec::from_elem(0, size);
-        self.read_into(physical_address, &mut target);
-        for ba in &self.break_on_access {
-            if !(virtual_address > ba.1 as u64 || virtual_address+(size as u64) < ba.0) { println!("{:x}+{:x}: {:x?}", ba.0, virtual_address-ba.0, target); }
-        }
-        target
-    }*/
 }
 
 pub struct Bytes<'t> { memory : &'t Memory, virtual_address : u64, size : usize }
@@ -123,34 +104,12 @@ impl Iterator for Bytes<'_> {
 }
 impl Memory {
     pub fn read_bytes(&self, virtual_address: u64, size: usize) -> Bytes { Bytes{memory: &self, virtual_address, size} }
-
-    pub fn mem_read(&self, virtual_address: u64, size: usize) -> Vec<u8> {
-        self.read_aligned(self.translate(virtual_address), size).to_vec()
-    }
-
-    /*pub fn read<const N: usize>(&self, virtual_address: u64) -> [u8; N] {
-        let mut buffer = {
-            let mut buffer : [std::mem::MaybeUninit<u8>; N] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
-            //for i in 0..N { array[i] = std::mem::MaybeUninit::new(f(i)) }
-            let ptr = &mut buffer as *mut _ as *mut [u8; N];
-            let buffer_as_initialized = unsafe { ptr.read() };
-            core::mem::forget(buffer);
-            buffer_as_initialized
-        };
-        //self.read_into(virtual_address, &mut buffer);
-        buffer.copy_from_slice(self.read_aligned(virtual_address, N));
-        buffer
-    }*/
-
     pub fn write<T>(&mut self, virtual_address: u64, value: &T) { self.write_aligned(virtual_address, raw(value)) }
-    //pub fn write<T>(&mut self, virtual_address: u64, value: T) { self.write_aligned(virtual_address, raw(&value)) }
 
-    //pub fn write_bytes(&mut self, virtual_address: u64, data: &[u8]) { for offset in 0..data.len() { self.write_aligned(virtual_address+offset as u64, &[data[offset]]) } }
     pub fn write_bytes<Bytes:IntoIterator<Item=u8>>(&mut self, virtual_address: u64, bytes: Bytes) {
         for (offset, byte) in bytes.into_iter().enumerate() { self.write_byte(virtual_address+offset as u64, byte); }
     }
-
-    //pub fn mem_write(&mut self, virtual_address: u64, data: &[u8]) { self.write_bytes(virtual_address, data); }
+    pub fn write_unaligned<T>(&mut self, virtual_address: u64, value: &T) { self.write_bytes(virtual_address, raw(value).iter().copied()) }
 
     fn get<T>(&self, base: i64, offset: i64) -> T { self.read_unaligned((base + offset) as u64) }
     pub fn get_i64(&self, base: i64, offset: i64) -> i64 { self.get(base, offset) }
