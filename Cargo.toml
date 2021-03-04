@@ -5,9 +5,14 @@ authors = ["fotcorn <fotcorn@gmail.com>", "Matthias Fauconneau <matthias.fauconn
 edition = '2018'
 
 [dependencies]
-#object = ""
-addr2line = ""
+log = ""
+env_logger = ""
 fnv = ""
 bitflags = ""
-goblin = ""
 uefi = { path = "../uefi" }
+signal-hook = ""
+object = "" #0.18
+#gimli = ""
+gimli = { path = "gimli" }
+unwind = { path = "unwind/unwind" }
+addr2line = { path = "addr2line" } #object v0.18

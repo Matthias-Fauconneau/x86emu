@@ -1,5 +1,13 @@
 use crate::{memory::Memory, instruction::{Operand, Register, Flags, OperandSize}};
 
+/*#[derive(PartialEq)]
+pub struct Location<'t> { pub file: &'t str, pub line: Option<u32> }
+impl std::fmt::Display for Location<'_> { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    f.write_str(self.file)?;
+    if let Some(line) = self.line { write!(f, ":{}", line)? }
+    Ok(())
+}}*/
+
 pub struct State {
     pub rip: i64,
     pub rax: i64, pub rbx: i64, pub rcx: i64, pub rdx: i64, pub rsp: i64, pub rbp: i64, pub rsi: i64, pub rdi: i64,
@@ -11,11 +19,11 @@ pub struct State {
     pub memory: Memory,
     // Kept in execution context to avoid passing to every instruction execution functions
     pub print_instructions: bool,
-    pub find_location: Box<dyn Fn(u64)->String>
+    //pub find_location: Box<dyn Fn(u64)->Option<Location<'static>>>
 }
 
-impl State{
-    pub fn new(find_location: Box<dyn Fn(u64)->String>) -> Self { Self{
+impl State {
+    pub fn new(/*find_location: Box<dyn Fn(u64)->Option<Location<'static>>>*/) -> Self { Self{
         rip: 0,
         rax: 0, rbx: 0, rcx: 0, rdx: 0, rsp: 0, rbp: 0, rsi: 0, rdi: 0,
         r8: 0, r9: 0, r10: 0, r11: 0, r12: 0, r13: 0, r14: 0, r15: 0,
@@ -24,7 +32,7 @@ impl State{
         gdt: 0, idt: 0,
         memory: Default::default(),
         print_instructions: false,
-        find_location
+        //find_location
     } }
 
     pub fn get_flag(&self, flag: Flags) -> bool {

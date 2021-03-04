@@ -826,10 +826,8 @@ pub fn lret(state: &mut State) {
 
 pub fn leave(state: &mut State) {
     state.print("leave");
-    let value = state.get_register_value(Register::RBP);
-    state.set_register_value(Register::RSP, value);
-    let value = stack_pop(state);
-    state.set_register_value(Register::RBP, value);
+    state.rsp = state.rbp;
+    state.rbp = stack_pop(state);
 }
 
 pub fn pushf(state: &mut State) { let value = state.rflags; stack_push(state, &value); }

@@ -1,13 +1,8 @@
 #![feature(abi_efiapi, box_syntax,or_patterns)]
-trait Join : Iterator { fn join(&mut self, sep: char) -> String where Self::Item: std::fmt::Display {
-    let mut result = String::new();
-    for e in self { use std::fmt::Write; write!(&mut result, "{}", e).unwrap(); result.push(sep); } result.pop();
-    result
-} }
-impl<T:Iterator> Join for T {}
-use std::path::Path;
+use std::{sync::{Arc, atomic::AtomicBool}, path::Path};
 #[macro_use] extern crate bitflags;
 fn address_of<T>(t:&T) -> u64 { t as *const T as u64 }
+use object::{Object, ObjectSection};
 mod memory; use memory::PAGE_SIZE;
 mod state; use state::State;
 mod instruction;
@@ -18,24 +13,29 @@ mod guest; use guest::cast_slice;
 mod uefi;
 
 fn main() -> Result<(), String> {
+    env_logger::Builder::new().filter(None, log::LevelFilter::Trace).format_level(false).format_timestamp(None).init();
+
+    let sigint = Arc::new(AtomicBool::new(false));
+    signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&sigint)).unwrap();
+
     let loader = std::env::args().nth(1).unwrap();  // /var/tmp/cargo/x86_64-unknown-uefi/debug/efiloader.efi
     let kernel = std::env::args().nth(2).unwrap();  // /var/tmp/cargo/x86_64-kernel/debug/kernel.elf
     let load_options = std::env::args().nth(3).unwrap(); // fs0:\\efiloader.efi kernel=kernel.elf image.simple_fb=simple_fb.elf fb.width=1920 fb.height=1080
+
     fn read(path: &Path) -> Vec<u8> { std::fs::read(path).expect(path.to_str().unwrap()) }
     let loader = read(&Path::new(&loader));
     let kernel = read(&Path::new(&kernel));
 
-    let object = addr2line::object::File::parse(&loader).unwrap();
-    let addr2line = addr2line::Context::new(&object).unwrap();
+    let loader = object::File::parse(&loader).unwrap();
+    let addr2line = addr2line::Context::new(&loader).unwrap();
 
-    let mut state = State::new(box move |address| {
-        if let Ok(Some(location)) = addr2line.find_location(address) { format!("{}:{}", location.file.unwrap_or("").rsplit('/').take(4).collect::<Vec<_>>().iter().rev().join('/'), location.line.unwrap_or(0)) }
-        else { Default::default() }
-    });
+    let mut state = State::new(/*box move |address| -> Option<Location<'_>> {
+        if let Ok(Some(location)) = addr2line.find_location(address) { Some(Location{file: location.file.unwrap(), line: location.line}) } else { None }
+    }*/);
     state.rsp = STACK_BASE as i64;
 
-    //static LOADER_BASE : u64 = 0x1_0000_0000;
-    //static LOADER_SIZE : usize = 0x1_0000_0000;
+    static LOADER_BASE : u64 = 0x20_0000;
+    //static LOADER_SIZE : usize = 0x0_C000_0000;
 
     static HEAP_BASE : u64 = 0x2_0000_0000;
     static HEAP_SIZE : usize = 0x0_0010_0000;
@@ -49,16 +49,16 @@ fn main() -> Result<(), String> {
     state.memory.host_allocate_physical(STACK_BASE-(STACK_SIZE as u64), STACK_SIZE); // 64KB stack
 
     state.rip = {
-        let pe = (if let goblin::Object::PE(pe) = goblin::Object::parse(&loader).unwrap() { Some(pe) } else { None }).unwrap();
-        for section in pe.sections {
-            let image_base = state.memory.translate(pe.image_base as u64+section.virtual_address as u64)/PAGE_SIZE;
-            for (page_index, page) in loader[section.pointer_to_raw_data as usize..][..section.size_of_raw_data as usize].chunks(PAGE_SIZE as usize).enumerate() {
+        for section in loader.sections() {
+            println!("{:?} {:x} {:x}", section.name(), LOADER_BASE+section.address(), section.data().unwrap().len());
+            let image_base = state.memory.translate(LOADER_BASE+section.address())/PAGE_SIZE;
+            for (page_index, page) in section.data().unwrap().chunks(PAGE_SIZE as usize).enumerate() {
                 let mut page = page.to_vec();
                 page.resize(PAGE_SIZE as usize, 0);
                 state.memory.physical_to_host.insert(image_base+page_index as u64, page);
             }
         }
-        pe.image_base as u64 + pe.entry as u64 // address_of_entry_point
+        LOADER_BASE + loader.entry() as u64
     } as i64;
 
     #[derive(Default)]
@@ -190,5 +190,5 @@ fn main() -> Result<(), String> {
         state.rdx = address_of(system_table) as i64;
     }
     //state.print_instructions = true;
-    state.execute(&traps, &mut Default::default(), true)
+    state.execute(&traps, &mut Default::default(), addr2line, sigint, &loader, LOADER_BASE)
 }
