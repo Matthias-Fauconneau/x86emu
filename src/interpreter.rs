@@ -134,6 +134,38 @@ pub fn mov(state: &mut State, op: &Operands) {
     mov_(state, op);
 }
 
+pub fn movd(state: &mut State, op: &Operands) {
+    let operand_size = op.size();
+    let (first_operand, second_operand) = op.operands();
+    /*let value = state.get_value(&first_operand, operand_size);
+    state.set_xmm(value as u128, second_operand, operand_size);*/
+    let value = state.get_value_or_xmm(&first_operand, operand_size);
+    state.set_value_or_xmm(value, second_operand, operand_size);
+}
+
+pub fn movps(state: &mut State, op: &Operands) {
+	let operand_size = op.size();
+	let (first_operand, second_operand) = op.operands();
+	/*let value = state.get_xmm(&first_operand, operand_size);
+	state.set_xmm(value, second_operand, operand_size);*/
+	let value = state.get_value_or_xmm(&first_operand, operand_size);
+	state.set_value_or_xmm(value, second_operand, operand_size);
+}
+
+pub fn cvtpi2ps(state: &mut State, op: &Operands) {
+	let operand_size = op.size();
+	let (first_operand, second_operand) = op.operands();
+	let value = state.get_value(&first_operand, operand_size);
+	state.set_xmm((value as f32).to_bits() as u128, second_operand, operand_size);
+}
+
+pub fn cvttps2pi(state: &mut State, op: &Operands) {
+	let operand_size = op.size();
+	let (first_operand, second_operand) = op.operands();
+	let value = state.get_xmm(&first_operand, operand_size);
+	state.set_value_or_xmm(f32::from_bits(value as u32) as i64 as u128, second_operand, operand_size);
+}
+
 pub fn movsx(state: &mut State, op: &Operands) {
     state.print_no_size("movsx", &op);
     // normal mov already does the sign extension
@@ -161,6 +193,7 @@ pub fn movzx(state: &mut State, op: &Operands) {
         OperandSize::Bit16 => value as u16 as u64,
         OperandSize::Bit32 => value as u32 as u64,
         OperandSize::Bit64 => value as u64 as u64,
+        _ => unreachable!(),
     };
 
     // OperandSize::Bit64 is not used because topet is always a register
@@ -189,6 +222,7 @@ fn add_(state: &mut State, value0: i64, value1: i64, operand_size: OperandSize) 
             let (_, overflow) = (value1 as i64).overflowing_add(value0 as i64);
             (result as i64, carry, overflow)
         }
+        _ => unreachable!(),
     };
     state.set_flag(Flags::Carry, carry);
     state.set_flag(Flags::Overflow, overflow);
@@ -211,11 +245,11 @@ pub fn or(state: &mut State, op: &Operands) {
     state.print_("or", &op);
     let operand_size = op.size();
     let (first_operand, second_operand) = op.operands();
-    let value0 = state.get_value(&first_operand, operand_size);
-    let value1 = state.get_value(&second_operand, operand_size);
+    let value0 = state.get_value_or_xmm(&first_operand, operand_size);
+    let value1 = state.get_value_or_xmm(&second_operand, operand_size);
     let result = value0 | value1;
-    state.compute_flags(result, operand_size);
-    state.set_value(result, &second_operand, operand_size);
+    state.compute_flags(result as i64, operand_size);
+    state.set_value_or_xmm(result, &second_operand, operand_size);
 }
 
 pub fn adc(state: &mut State, op: &Operands) {
@@ -245,6 +279,7 @@ fn sub__(state: &mut State, value0: i64, value1: i64, operand_size: OperandSize)
             let (_, overflow) = (value1 as i64).overflowing_sub(value0 as i64);
             (result as i64, carry, overflow)
         }
+        _ => unreachable!(),
     };
     state.set_flag(Flags::Carry, carry);
     state.set_flag(Flags::Overflow, overflow);
@@ -285,7 +320,15 @@ fn and_(state: &mut State, op: &Operands, set: bool) {
 
 pub fn and(state: &mut State, op: &Operands) {
     state.print_("and", &op);
-    and_(state, op, true);
+    let operand_size = op.size();
+    let (first_operand, second_operand) = op.operands();
+    let value0 = state.get_value_or_xmm(&first_operand, operand_size);
+    let value1 = state.get_value_or_xmm(&second_operand, operand_size);
+    let result = value0 & value1;
+    state.compute_flags(result as i64, operand_size);
+    state.set_flag(Flags::Carry, false);
+    state.set_flag(Flags::Overflow, false);
+    state.set_value_or_xmm(result, &second_operand, operand_size);
 }
 
 pub fn sub(state: &mut State, op: &Operands) {
@@ -297,11 +340,11 @@ pub fn xor(state: &mut State, op: &Operands) {
     state.print_("xor", &op);
     let operand_size = op.size();
     let (first_operand, second_operand) = op.operands();
-    let value0 = state.get_value(&first_operand, operand_size);
-    let value1 = state.get_value(&second_operand, operand_size);
+    let value0 = state.get_value_or_xmm(&first_operand, operand_size);
+    let value1 = state.get_value_or_xmm(&second_operand, operand_size);
     let result = value0 ^ value1;
-    state.compute_flags(result, operand_size);
-    state.set_value(result, &second_operand, operand_size);
+    state.compute_flags(result as i64, operand_size);
+    state.set_value_or_xmm(result, &second_operand, operand_size);
 }
 
 pub fn cmp(state: &mut State, op: &Operands) {
@@ -544,7 +587,8 @@ pub fn shl(state: &mut State, op: &Operands) {
                 let overflow = ((result & 0x8000000000000000) >> 63 == 1) != carry;
                 (result as i64, carry, overflow)
             }
-        }
+        },
+				_ => unreachable!(),
     };
 
     if value0 == 1 {
@@ -616,6 +660,7 @@ pub fn shr(state: &mut State, op: &Operands) {
                 (result as i64, carry, value1 as u64 & 0x8000000000000000 == 0x8000000000000000)
             }
         }
+        _ => unreachable!(),
     };
 
     if value0 == 1 {
@@ -687,6 +732,7 @@ pub fn sar(state: &mut State, op: &Operands) {
                 (result as i64, carry)
             }
         }
+        _ => unreachable!(),
     };
 
     if value0 == 1 {
@@ -732,6 +778,7 @@ pub fn div(state: &mut State, op: &Operands) {
         OperandSize::Bit16 => (Register::AX, Register::DX),
         OperandSize::Bit32 => (Register::EAX, Register::EDX),
         OperandSize::Bit64 => (Register::RAX, Register::RDX),
+        _ => unreachable!(),
     };
 
     let dividend = ((state.get_register_value(reg_upper) as u128) << 64) | (state.get_register_value(reg_lower) as u128);
@@ -751,6 +798,11 @@ pub fn idiv(state: &mut State, op: &Operands) {
     panic!("idiv");
 }
 
+pub fn ud2(state: &mut State) {
+    state.print("ud2");
+    panic!("");
+}
+
 pub fn mul(state: &mut State, op: &Operands) {
     state.print_("mul", &op);
     let operand_size = op.size();
@@ -759,6 +811,7 @@ pub fn mul(state: &mut State, op: &Operands) {
         OperandSize::Bit16 => Register::AX,
         OperandSize::Bit32 => Register::EAX,
         OperandSize::Bit64 => Register::RAX,
+        _ => unreachable!(),
     };
     let source0 = state.get_register_value(a) as u64;
     let source1 = state.get_value(&op.op(), operand_size) as u64;
@@ -770,6 +823,7 @@ pub fn mul(state: &mut State, op: &Operands) {
         OperandSize::Bit16 => state.set_value((result>>16) as i64, &Operand::Register{ register: Register::DX }, operand_size),
         OperandSize::Bit32 => state.set_value((result>>32) as i64, &Operand::Register{ register: Register::EDX }, operand_size),
         OperandSize::Bit64 => state.set_value((result>>64) as i64, &Operand::Register{ register: Register::RDX }, operand_size),
+        _ => unreachable!(),
     };
     // TODO: mul does not set carry/overflow flag
 }
@@ -792,6 +846,46 @@ pub fn imul(state: &mut State, op: &Operands) {
         None => state.set_value(result, &operands.1, operand_size),
     }
     // TODO:  imul does not set carry/overflow flag
+}
+
+pub fn fadd(state: &mut State, op: &Operands) {
+    state.print_("fadd", &op);
+    let operand_size = op.size();
+    let operands = op.operands();
+    let source0 = state.get_value_or_xmm(&operands.0, operand_size);
+    let source1 = state.get_value_or_xmm(&operands.1, operand_size);
+    let result = f32::from_bits(source0 as u32) + f32::from_bits(source1 as u32);
+		state.set_xmm(result.to_bits() as u128, &operands.1, operand_size);
+}
+
+pub fn fsub(state: &mut State, op: &Operands) {
+    state.print_("fsub", &op);
+    let operand_size = op.size();
+    let operands = op.operands();
+    let source0 = state.get_value_or_xmm(&operands.0, operand_size);
+    let source1 = state.get_value_or_xmm(&operands.1, operand_size);
+    let result = f32::from_bits(source1 as u32) - f32::from_bits(source0 as u32); // checkme
+		state.set_xmm(result.to_bits() as u128, &operands.1, operand_size);
+}
+
+pub fn fmul(state: &mut State, op: &Operands) {
+    state.print_("fmul", &op);
+    let operand_size = op.size();
+    let operands = op.operands();
+    let source0 = state.get_value_or_xmm(&operands.0, operand_size);
+    let source1 = state.get_value_or_xmm(&operands.1, operand_size);
+    let result = f32::from_bits(source0 as u32) * f32::from_bits(source1 as u32);
+		state.set_xmm(result.to_bits() as u128, &operands.1, operand_size);
+}
+
+pub fn fdiv(state: &mut State, op: &Operands) {
+    state.print_("fdiv", &op);
+    let operand_size = op.size();
+    let operands = op.operands();
+    let source0 = state.get_value_or_xmm(&operands.0, operand_size);
+    let source1 = state.get_value_or_xmm(&operands.1, operand_size);
+    let result = f32::from_bits(source1 as u32) / f32::from_bits(source0 as u32); // checkme
+		state.set_xmm(result.to_bits() as u128, &operands.1, operand_size);
 }
 
 pub fn not(state: &mut State, op: &Operands) {
@@ -888,6 +982,7 @@ pub fn movs(state: &mut State, op: &Operands) {
             OperandSize::Bit32 => {state.memory.write(to, &state.memory.read::<u32>(from)); 4},
             OperandSize::Bit16 => {state.memory.write(to, &state.memory.read::<u16>(from)); 2},
             OperandSize::Bit8 =>   {state.memory.write(to, &state.memory.read::<u8  >(from)); 1},
+            _ => unreachable!(),
         };
         let update = if state.get_flag(Flags::Direction) { -size as i64 } else { size };
         state.set_register_value(Register::RSI, from as i64 + update);
@@ -1193,6 +1288,7 @@ fn bt_prepare(bit_position: i64, op: i64, operand_size: OperandSize) -> (i64, bo
         OperandSize::Bit16 => bit_position % 16,
         OperandSize::Bit32 => bit_position % 32,
         OperandSize::Bit64 => bit_position % 64,
+        _ => unreachable!(),
     };
 
     let bit = ((op >> bit_position) & 1) == 1;
@@ -1259,6 +1355,7 @@ pub fn cmpxchg(state: &mut State, op: &Operands) {
         OperandSize::Bit16 => Register::AX,
         OperandSize::Bit32 => Register::EAX,
         OperandSize::Bit64 => Register::RAX,
+        _ => unreachable!(),
     };
     let accumulator = state.get_register_value(accumulator_type);
 
@@ -1371,8 +1468,8 @@ pub fn cpuid(state: &mut State) {
                         0 << 16 | //
                         0 << 17 | // Process context identifiers (CR4 bit 17)
                         0 << 18 | // Direct cache access for DMA writes[12][13]
-                        0 << 19 | // SSE4.1 instructions
-                        0 << 20 | // SSE4.2 instructions
+                        1 << 19 | // SSE4.1 instructions
+                        1 << 20 | // SSE4.2 instructions
                         0 << 21 | // x2APIC support
                         0 << 22 | // MOVBE instruction (big-endian)
                         0 << 23 | // POPCNT instruction
@@ -1380,8 +1477,8 @@ pub fn cpuid(state: &mut State) {
                         0 << 25 | // AES instruction set
                         0 << 26 | // XSAVE, XRESTOR, XSETBV, XGETBV
                         0 << 27 | // XSAVE enabled by OS
-                        0 << 28 | // Advanced Vector Extensions
-                        0 << 29 | // F16C (half-precision) FP support
+                        1 << 28 | // Advanced Vector Extensions
+                        1 << 29 | // F16C (half-precision) FP support
                         0 << 30 | // RDRAND (on-chip random number generator) support
                         0 << 31; // Running on a hypervisor (always 0 on a real CPU, but also with some hypervisors)
 

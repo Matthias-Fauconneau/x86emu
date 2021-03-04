@@ -9,7 +9,7 @@ mod dispatch; use dispatch::dispatch;
 impl State {
 	pub fn execute(&mut self) {
 		let mut instruction_cache = fnv::FnvHashMap::<u64,(Opcode, Operands, usize)>::default();
-		loop {
+		while self.rip != !0 {
 			let instruction_start = self.rip as u64;
 			let instruction = match instruction_cache.entry(instruction_start) {
 				std::collections::hash_map::Entry::Occupied(entry) => {
@@ -68,7 +68,17 @@ impl Heap {
 	}
 }
 
-pub fn pass(state: &mut State, args: &[i64], fargs: &[f32]) {
+pub fn stack_push_bytes(state: &mut State, bytes: &[u8]) {
+	state.rsp -= bytes.len() as i64;
+	state.memory.write_aligned_bytes(state.rsp as u64, bytes);
+}
+pub fn stack_push<T>(state: &mut State, value: &T) {
+	assert_eq!(std::mem::size_of::<T>()%8, 0);
+	stack_push_bytes(state, memory::raw(value));
+}
+
+pub fn call(state: &mut State, args: &[i64], fargs: &[f32]) {
 	(state.rcx, state.rdx/*, state.r8*//*, state.r9*/) = (args[0], args[1]/*, args[2]*/); //, args.get(3).unwrap_or_default()];
-	(state.xmm[0], ) = (fargs[0], );
+	(state.xmm[0], ) = (fargs[0].to_bits() as u128, );
+	stack_push(state, &!0u64);
 }

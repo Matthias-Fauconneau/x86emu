@@ -2,6 +2,9 @@ use std::fmt;
 
 #[derive(Debug, Copy, Clone)]
 pub enum Register {
+    // 128 Bit
+    XMM0, XMM1, XMM2, XMM3, XMM4, XMM5, XMM6, XMM7,
+    XMM8, XMM9, XMM10, XMM11, XMM12, XMM13, XMM14, XMM15,
     // 64 Bit
     RAX, RBX, RCX, RDX, RSP, RBP, RSI, RDI,
     R8, R9, R10, R11, R12, R13, R14, R15,
@@ -32,34 +35,39 @@ pub enum Flags {
 #[derive(Debug)] pub enum Repeat { None, Equal, NotEqual }
 impl Default for Repeat { fn default() -> Repeat { Repeat::None } }
 
-#[derive(Clone, Copy, Debug)] pub enum RegisterSize { Bit8, Bit16, Bit32, Bit64, Segment }
-#[derive(Debug, Copy, Clone)] pub enum OperandSize { Bit64, Bit32, Bit16, Bit8 }
+#[derive(Clone, Copy, Debug)] pub enum RegisterSize { Bit8, Bit16, Bit32, Bit64, Bit128, Segment }
+#[derive(Debug, Copy, Clone)] pub enum OperandSize { Bit128, Bit64, Bit32, Bit16, Bit8 }
 
 pub fn get_register_size(reg: Register) -> OperandSize {
-    match reg {
-        Register::RAX | Register::RBX | Register::RCX | Register::RDX | Register::RSP |
-        Register::RBP | Register::RSI | Register::RDI | Register::RIP | Register::R8 |
-        Register::R9 | Register::R10 | Register::R11 | Register::R12 | Register::R13 |
-        Register::R14 | Register::R15 | Register::CR0 | Register::CR2 | Register::CR3 |
-        Register::CR4 | Register::CR8 => OperandSize::Bit64,
+	match reg {
+		Register::XMM0 | Register::XMM1 |Register::XMM2 |Register::XMM3 |
+		Register::XMM4 | Register::XMM5 |Register::XMM6 |Register::XMM7 |
+		Register::XMM8 | Register::XMM9 |Register::XMM10 |Register::XMM11 |
+		Register::XMM12 | Register::XMM13 |Register::XMM14 |Register::XMM15 => OperandSize::Bit128,
 
-        Register::EAX | Register::EBX | Register::ECX | Register::EDX | Register::ESP |
-        Register::EBP | Register::ESI | Register::EDI | Register::R8D | Register::R9D |
-        Register::R10D | Register::R11D | Register::R12D | Register::R13D | Register::R14D |
-        Register::R15D => OperandSize::Bit32,
+		Register::RAX | Register::RBX | Register::RCX | Register::RDX | Register::RSP |
+		Register::RBP | Register::RSI | Register::RDI | Register::RIP | Register::R8 |
+		Register::R9 | Register::R10 | Register::R11 | Register::R12 | Register::R13 |
+		Register::R14 | Register::R15 | Register::CR0 | Register::CR2 | Register::CR3 |
+		Register::CR4 | Register::CR8 => OperandSize::Bit64,
 
-        Register::AX | Register::CX | Register::DX | Register::BX | Register::SP |
-        Register::BP | Register::SI | Register::DI | Register::R8W | Register::R9W |
-        Register::R10W | Register::R11W | Register::R12W | Register::R13W | Register::R14W |
-        Register::R15W | Register::ES | Register::CS | Register::SS | Register::DS |
-        Register::FS | Register::GS => OperandSize::Bit16,
+		Register::EAX | Register::EBX | Register::ECX | Register::EDX | Register::ESP |
+		Register::EBP | Register::ESI | Register::EDI | Register::R8D | Register::R9D |
+		Register::R10D | Register::R11D | Register::R12D | Register::R13D | Register::R14D |
+		Register::R15D => OperandSize::Bit32,
 
-        Register::AL | Register::CL | Register::DL | Register::BL | Register::AH |
-        Register::CH | Register::DH | Register::BH | Register::SPL | Register::BPL |
-        Register::SIL | Register::DIL | Register::R8B | Register::R9B |
-        Register::R10B | Register::R11B | Register::R12B | Register::R13B | Register::R14B |
-        Register::R15B => OperandSize::Bit8,
-    }
+		Register::AX | Register::CX | Register::DX | Register::BX | Register::SP |
+		Register::BP | Register::SI | Register::DI | Register::R8W | Register::R9W |
+		Register::R10W | Register::R11W | Register::R12W | Register::R13W | Register::R14W |
+		Register::R15W | Register::ES | Register::CS | Register::SS | Register::DS |
+		Register::FS | Register::GS => OperandSize::Bit16,
+
+		Register::AL | Register::CL | Register::DL | Register::BL | Register::AH |
+		Register::CH | Register::DH | Register::BH | Register::SPL | Register::BPL |
+		Register::SIL | Register::DIL | Register::R8B | Register::R9B |
+		Register::R10B | Register::R11B | Register::R12B | Register::R13B | Register::R14B |
+		Register::R15B => OperandSize::Bit8,
+	}
 }
 
 impl fmt::Display for Register {
@@ -91,6 +99,7 @@ impl Operand {
                     OperandSize::Bit16 => immediate as u16 as u64,
                     OperandSize::Bit32 => immediate as u32 as u64,
                     OperandSize::Bit64 => immediate as u64,
+                    _ => unreachable!(),
                 })
             }
         }
@@ -212,6 +221,12 @@ pub enum Opcode {
     Cmp,
     CompareMulOperation,
     Cpuid,
+    Cvtpi2ps,
+    Cvttps2pi,
+    Fadd,
+    Fsub,
+    Fmul,
+    Fdiv,
     Imul,
     Int,
     Ja,
@@ -237,6 +252,8 @@ pub enum Opcode {
     Lgdt,
     Mov,
     Movs,
+    Movd,
+    Movps,
     Movsx,
     Movzx,
     Nop,
@@ -278,6 +295,7 @@ pub enum Opcode {
     Setge,
     Setle,
     Setg,
+    Ud2,
 }
 
 pub fn print(instruction: &str) { println!("{:<6}", instruction); }
@@ -290,6 +308,7 @@ pub fn print_(instruction: &str, op: &Operands) {
                 OperandSize::Bit16 => println!("{:<6} {}", instruction.to_owned() + "w", op),
                 OperandSize::Bit32 => println!("{:<6} {}", instruction.to_owned() + "l", op),
                 OperandSize::Bit64 => println!("{:<6} {}", instruction.to_owned() + "q", op),
+                _ => unreachable!(),
             }
         },
         None => println!("{:<6} {}", instruction, op),
