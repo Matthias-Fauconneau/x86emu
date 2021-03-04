@@ -9,17 +9,18 @@ impl std::fmt::Display for Location<'_> { fn fmt(&self, f: &mut std::fmt::Format
 }}*/
 
 pub struct State {
-    pub rip: i64,
-    pub rax: i64, pub rbx: i64, pub rcx: i64, pub rdx: i64, pub rsp: i64, pub rbp: i64, pub rsi: i64, pub rdi: i64,
-    pub r8: i64, pub r9: i64, pub r10: i64, pub r11: i64, pub r12: i64, pub r13: i64, pub r14: i64, pub r15: i64,
-    pub rflags: i64,
-    pub cr0: i64, pub cr2: i64, /*cr3: memory.cr3,*/ pub cr4: i64, pub cr8: i64,
-    pub gdt: i64, pub idt: i64,
+	pub rip: i64,
+	pub rax: i64, pub rbx: i64, pub rcx: i64, pub rdx: i64, pub rsp: i64, pub rbp: i64, pub rsi: i64, pub rdi: i64,
+	pub r8: i64, pub r9: i64, pub r10: i64, pub r11: i64, pub r12: i64, pub r13: i64, pub r14: i64, pub r15: i64,
+	pub rflags: i64,
+	pub cr0: i64, pub cr2: i64, /*cr3: memory.cr3,*/ pub cr4: i64, pub cr8: i64,
+	pub gdt: i64, pub idt: i64,
+	pub xmm: [f32; 16],
 
-    pub memory: Memory,
-    // Kept in execution context to avoid passing to every instruction execution functions
-    pub print_instructions: bool,
-    //pub find_location: Box<dyn Fn(u64)->Option<Location<'static>>>
+	pub memory: Memory,
+	// Kept in execution context to avoid passing to every instruction execution functions
+	pub print_instructions: bool,
+	//pub find_location: Box<dyn Fn(u64)->Option<Location<'static>>>
 }
 
 impl State {
@@ -30,6 +31,7 @@ impl State {
         rflags: 0,
         cr0: 0, cr2: 0, /*cr3: memory.cr3,*/ cr4: 0, cr8: 0,
         gdt: 0, idt: 0,
+        xmm: [0.; 16],
         memory: Default::default(),
         print_instructions: false,
         //find_location

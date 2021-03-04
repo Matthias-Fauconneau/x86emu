@@ -61,16 +61,16 @@ impl Memory {
         self.try_read_aligned(virtual_address, size).unwrap_or_else(|| panic!("read {:x} {}", virtual_address, size))
     }
 
-    pub fn write_aligned(&mut self, virtual_address: u64, value: &[u8]) {
-        assert!(is_aligned(virtual_address, value.len()), "unaligned write {:x} {}", virtual_address, value.len());
+    pub fn write_aligned_bytes(&mut self, virtual_address: u64, bytes: &[u8]) {
+        assert!(is_aligned(virtual_address, bytes.len()), "unaligned write {:x} {}", virtual_address, bytes.len());
         let physical_address = self.translate(virtual_address);
-        let page = self.physical_to_host.get_mut(&(physical_address/PAGE_SIZE)).unwrap_or_else(|| panic!("write {:x} {}",physical_address, value.len()));
+        let page = self.physical_to_host.get_mut(&(physical_address/PAGE_SIZE)).unwrap_or_else(|| panic!("write {:x} {}",physical_address, bytes.len()));
         let offset = (physical_address%PAGE_SIZE) as usize;
-        page[offset..offset+value.len()].copy_from_slice(value);
+        page[offset..offset+bytes.len()].copy_from_slice(bytes);
     }
 
     pub fn read_byte(&self, virtual_address: u64) -> u8 { self.read_aligned(virtual_address, 1)[0] }
-    pub fn write_byte(&mut self, virtual_address: u64, value: u8) { self.write_aligned(virtual_address, raw(&value)) }
+    pub fn write_byte(&mut self, virtual_address: u64, value: u8) { self.write_aligned_bytes(virtual_address, &[value]) }
 
     pub fn read<T>(&self, virtual_address: u64) -> T { from_raw(self.read_aligned(virtual_address, std::mem::size_of::<T>())) }
 
@@ -104,12 +104,15 @@ impl Iterator for Bytes<'_> {
 }
 impl Memory {
     pub fn read_bytes(&self, virtual_address: u64, size: usize) -> Bytes { Bytes{memory: &self, virtual_address, size} }
-    pub fn write<T>(&mut self, virtual_address: u64, value: &T) { self.write_aligned(virtual_address, raw(value)) }
+    pub fn write<T>(&mut self, virtual_address: u64, value: &T) { self.write_aligned_bytes(virtual_address, raw(value)) }
 
-    pub fn write_bytes<Bytes:IntoIterator<Item=u8>>(&mut self, virtual_address: u64, bytes: Bytes) {
+    /*pub fn write_bytes<Bytes:IntoIterator<Item=u8>>(&mut self, virtual_address: u64, bytes: Bytes) {
         for (offset, byte) in bytes.into_iter().enumerate() { self.write_byte(virtual_address+offset as u64, byte); }
+    }*/
+    pub fn write_unaligned_bytes(&mut self, virtual_address: u64, bytes: &[u8]) {
+        for (offset, &byte) in bytes.iter().enumerate() { self.write_byte(virtual_address+offset as u64, byte); }
     }
-    pub fn write_unaligned<T>(&mut self, virtual_address: u64, value: &T) { self.write_bytes(virtual_address, raw(value).iter().copied()) }
+    pub fn write_unaligned<T>(&mut self, virtual_address: u64, value: &T) { self.write_unaligned_bytes(virtual_address, raw(value)) }
 
     fn get<T>(&self, base: i64, offset: i64) -> T { self.read_unaligned((base + offset) as u64) }
     pub fn get_i64(&self, base: i64, offset: i64) -> i64 { self.get(base, offset) }

@@ -1,3 +1,4 @@
+use bitflags::bitflags;
 use crate::{memory::Memory, instruction::{Register, RegisterSize, OperandSize, Opcode, Repeat, Operand, Operands}};
 
 #[derive(PartialEq)] enum RegOrOpcode { Register, Opcode, }

@@ -1,18 +1,20 @@
 [package]
-name = "x86emu"
-version = "0.0.0"
-authors = ["fotcorn <fotcorn@gmail.com>", "Matthias Fauconneau <matthias.fauconneau@gmail.com"]
-edition = '2018'
+name= 'x86emu'
+version= '0.0.0'
+authors= ['Matthias Fauconneau <matthias.fauconneau@gmail.com']
+edition= '2018'
 
 [dependencies]
-log = ""
-env_logger = ""
-fnv = ""
-bitflags = ""
-uefi = { path = "../uefi" }
-signal-hook = ""
-object = "" #0.18
-#gimli = ""
-gimli = { path = "gimli" }
-unwind = { path = "unwind/unwind" }
-addr2line = { path = "addr2line" } #object v0.18
+log= ''
+env_logger= ''
+fnv= ''
+bitflags= ''
+signal-hook= ''
+#object= ''
+#gimli= ''
+#unwind= ''
+#addr2line= ''
+
+#gimli = { path = "gimli" }
+#unwind = { path = "unwind/unwind" }
+#addr2line = { path = "addr2line" } #object v0.18
