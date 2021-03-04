@@ -1,5 +1,5 @@
-pub fn /*to_*/raw<T>(value: &T) -> &[u8] { unsafe{std::slice::from_raw_parts((value as *const T) as *const u8, std::mem::size_of::<T>())} }
-pub fn /*to_*/raw_mut<T>(value: &mut std::mem::MaybeUninit<T>) -> &mut [u8] {
+pub fn raw<T>(value: &T) -> &[u8] { unsafe{std::slice::from_raw_parts((value as *const T) as *const u8, std::mem::size_of::<T>())} }
+pub fn raw_mut<T>(value: &mut std::mem::MaybeUninit<T>) -> &mut [u8] {
     unsafe{std::slice::from_raw_parts_mut(value.as_mut_ptr() as *mut u8, std::mem::size_of::<T>())}
 }
 pub fn from_raw<T>(raw : &[u8]) -> T {
@@ -14,30 +14,10 @@ fn is_aligned(virtual_address: u64, size: usize) -> bool { size.is_power_of_two(
 #[derive(Default)]
 pub struct Memory {
     pub physical_to_host: fnv::FnvHashMap<u64, Vec<u8>>
-    //pub cr3: i64,
 }
 
 impl Memory {
-    pub fn translate(&self, address: u64) -> u64 {
-        address
-        /*let cr3 = self.cr3 as u64;
-        if cr3 == 0 {
-            address
-        } else {
-            unimplemented!();
-            /*// this code assumes that the guest operating system is using 2 megabyte pages
-            // todo: check some MSR register what page size is actually used
-            let page_address = address & 0b0000000000000000000000000000000000000000000111111111111111111111;
-            let level3 = (address & 0b0000000000000000000000000000000000111111111000000000000000000000) >> 21;
-            let level2 = (address & 0b0000000000000000000000000111111111000000000000000000000000000000) >> 30;
-            let level1 = (address & 0b0000000000000000111111111000000000000000000000000000000000000000) >> 39;
-
-            let entry = as_u64(self.read(cr3 + level1 * 8)) >> 12 << 12;
-            let entry = as_u64(self.read(cr3 + level2 * 8)) >> 12 << 12;
-            let entry = as_u64(self.read(cr3 + level3 * 8)) >> 12 << 12;
-            entry + page_address*/
-        }*/
-    }
+    pub fn translate(&self, address: u64) -> u64 { address }
 }
 
 impl Memory {
@@ -106,9 +86,6 @@ impl Memory {
     pub fn read_bytes(&self, virtual_address: u64, size: usize) -> Bytes { Bytes{memory: &self, virtual_address, size} }
     pub fn write<T>(&mut self, virtual_address: u64, value: &T) { self.write_aligned_bytes(virtual_address, raw(value)) }
 
-    /*pub fn write_bytes<Bytes:IntoIterator<Item=u8>>(&mut self, virtual_address: u64, bytes: Bytes) {
-        for (offset, byte) in bytes.into_iter().enumerate() { self.write_byte(virtual_address+offset as u64, byte); }
-    }*/
     pub fn write_unaligned_bytes(&mut self, virtual_address: u64, bytes: &[u8]) {
         for (offset, &byte) in bytes.iter().enumerate() { self.write_byte(virtual_address+offset as u64, byte); }
     }

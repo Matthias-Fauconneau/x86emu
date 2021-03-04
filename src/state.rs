@@ -5,12 +5,11 @@ pub struct State {
 	pub rax: i64, pub rbx: i64, pub rcx: i64, pub rdx: i64, pub rsp: i64, pub rbp: i64, pub rsi: i64, pub rdi: i64,
 	pub r8: i64, pub r9: i64, pub r10: i64, pub r11: i64, pub r12: i64, pub r13: i64, pub r14: i64, pub r15: i64,
 	pub rflags: i64,
-	pub cr0: i64, pub cr2: i64, /*cr3: memory.cr3,*/ pub cr4: i64, pub cr8: i64,
+	pub cr0: i64, pub cr2: i64, pub cr4: i64, pub cr8: i64,
 	pub gdt: i64, pub idt: i64,
 	pub xmm: [f32; 16],
 
 	pub memory: Memory,
-	// Kept in execution context to avoid passing to every instruction execution functions
 	pub print_instructions: bool,
 }
 
