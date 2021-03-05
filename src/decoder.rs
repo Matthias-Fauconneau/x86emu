@@ -794,7 +794,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 								let (op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit128,
 																																RegOrOpcode::Register,
 																																ImmediateSize::None,
-																																flags | Flags::OP1_XMM | Flags::OP2_XMM); // Checkme
+																																flags | Flags::OP1_XMM | Flags::OP2_XMM | Flags::REVERSED_REGISTER_DIRECTION); // Checkme
 								*rip += ip_offset;
 								(Opcode::Movps, op)
 							}
@@ -803,7 +803,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 								let (op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit128,
 																																RegOrOpcode::Register,
 																																ImmediateSize::None,
-																																flags | Flags::OP1_XMM | Flags::OP2_XMM | Flags::REVERSED_REGISTER_DIRECTION); // Checkme
+																																flags | Flags::OP1_XMM | Flags::OP2_XMM); // Checkme
 								*rip += ip_offset;
 								(Opcode::Movps, op)
 							}
@@ -864,7 +864,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 								let (op, ip_offset) = get_operands(&memory, *rip, register_size,
 																																RegOrOpcode::Register,
 																																ImmediateSize::None,
-																																flags | Flags::OP1_XMM); // checkme
+																																flags | Flags::OP2_XMM | Flags::REVERSED_REGISTER_DIRECTION); // checkme
 								*rip += ip_offset;
 								(Opcode::Cvtpi2ps, op)
 							}
@@ -872,7 +872,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 								let (op, ip_offset) = get_operands(&memory, *rip, register_size,
 																																RegOrOpcode::Register,
 																																ImmediateSize::None,
-																																flags | Flags::OP1_XMM | Flags::OP2_XMM);
+																																flags | Flags::OP1_XMM | Flags::REVERSED_REGISTER_DIRECTION);
 								*rip += ip_offset;
 								(Opcode::Cvttps2pi, op)
 							}
@@ -1016,7 +1016,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 								let (op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit128,
 																																RegOrOpcode::Register,
 																																ImmediateSize::None,
-																																flags | Flags::OP1_XMM | Flags::OP2_XMM);
+																																flags | Flags::OP1_XMM | Flags::OP2_XMM| Flags::REVERSED_REGISTER_DIRECTION);
 								*rip += ip_offset;
 								(Opcode::And, op)
 							}
@@ -1024,7 +1024,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 								let (op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit128,
 																																RegOrOpcode::Register,
 																																ImmediateSize::None,
-																																flags | Flags::OP1_XMM | Flags::OP2_XMM);
+																																flags | Flags::OP1_XMM | Flags::OP2_XMM| Flags::REVERSED_REGISTER_DIRECTION);
 								*rip += ip_offset;
 								(Opcode::Or, op)
 							},
@@ -1032,7 +1032,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 								let (op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit128,
 																																RegOrOpcode::Register,
 																																ImmediateSize::None,
-																																flags | Flags::OP1_XMM | Flags::OP2_XMM);
+																																flags | Flags::OP1_XMM | Flags::OP2_XMM| Flags::REVERSED_REGISTER_DIRECTION);
 								*rip += ip_offset;
 								(Opcode::Xor, op)
 							},
@@ -1040,7 +1040,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 								let (op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit128,
 																																RegOrOpcode::Register,
 																																ImmediateSize::None,
-																																flags | Flags::OP1_XMM | Flags::OP2_XMM);
+																																flags | Flags::OP1_XMM | Flags::OP2_XMM| Flags::REVERSED_REGISTER_DIRECTION);
 								*rip += ip_offset;
 								(Opcode::Fadd, op)
 							},
@@ -1048,7 +1048,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 								let (op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit128,
 																																RegOrOpcode::Register,
 																																ImmediateSize::None,
-																																flags | Flags::OP1_XMM | Flags::OP2_XMM);
+																																flags | Flags::OP1_XMM | Flags::OP2_XMM | Flags::REVERSED_REGISTER_DIRECTION);
 								*rip += ip_offset;
 								(Opcode::Fmul, op)
 							},
@@ -1056,7 +1056,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 								let (op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit128,
 																																RegOrOpcode::Register,
 																																ImmediateSize::None,
-																																flags | Flags::OP1_XMM | Flags::OP2_XMM);
+																																flags | Flags::OP1_XMM | Flags::OP2_XMM| Flags::REVERSED_REGISTER_DIRECTION);
 								*rip += ip_offset;
 								(Opcode::Fsub, op)
 							},
@@ -1064,26 +1064,27 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 								let (op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit128,
 																																RegOrOpcode::Register,
 																																ImmediateSize::None,
-																																flags | Flags::OP1_XMM | Flags::OP2_XMM);
+																																flags | Flags::OP1_XMM | Flags::OP2_XMM| Flags::REVERSED_REGISTER_DIRECTION);
 								*rip += ip_offset;
 								(Opcode::Fdiv, op)
 							}
 							0x6E => {
 								assert!(flags.contains(Flags::OPERAND_16_BIT));
-								//let register_size = if register_size == RegisterSize::Bit16 { RegisterSize::Bit128 }
-								let (op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit128,//register_size,
+								let register_size = if let RegisterSize::Bit16 = register_size { RegisterSize::Bit32 } else { register_size };
+								let (op, ip_offset) = get_operands(&memory, *rip, register_size,
 																																RegOrOpcode::Register,
 																																ImmediateSize::None,
-																																flags | Flags::OP1_XMM); // Checkme
+																																flags | Flags::OP2_XMM | Flags::REVERSED_REGISTER_DIRECTION); // Checkme
 								*rip += ip_offset;
 								(Opcode::Movd, op)
 							}
 							0x7E => {
 								assert!(flags.contains(Flags::OPERAND_16_BIT));
-								let (op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit128,//register_size,
+								let register_size = if let RegisterSize::Bit16 = register_size { RegisterSize::Bit32 } else { register_size };
+								let (op, ip_offset) = get_operands(&memory, *rip, register_size,
 																																RegOrOpcode::Register,
 																																ImmediateSize::None,
-																																flags | Flags::OP1_XMM | Flags::REVERSED_REGISTER_DIRECTION); // Checkme
+																																flags | Flags::OP2_XMM); // Checkme
 								*rip += ip_offset;
 								(Opcode::Movd, op)
 							}

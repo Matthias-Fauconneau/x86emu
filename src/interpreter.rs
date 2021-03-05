@@ -135,6 +135,7 @@ pub fn mov(state: &mut State, op: &Operands) {
 }
 
 pub fn movd(state: &mut State, op: &Operands) {
+		state.print_("movd", &op);
     let operand_size = op.size();
     let (first_operand, second_operand) = op.operands();
     /*let value = state.get_value(&first_operand, operand_size);
@@ -144,6 +145,7 @@ pub fn movd(state: &mut State, op: &Operands) {
 }
 
 pub fn movps(state: &mut State, op: &Operands) {
+	state.print_("movps", &op);
 	let operand_size = op.size();
 	let (first_operand, second_operand) = op.operands();
 	/*let value = state.get_xmm(&first_operand, operand_size);
@@ -153,6 +155,7 @@ pub fn movps(state: &mut State, op: &Operands) {
 }
 
 pub fn cvtpi2ps(state: &mut State, op: &Operands) {
+	state.print_("cvtpi2ps", &op);
 	let operand_size = op.size();
 	let (first_operand, second_operand) = op.operands();
 	let value = state.get_value(&first_operand, operand_size);
@@ -160,6 +163,7 @@ pub fn cvtpi2ps(state: &mut State, op: &Operands) {
 }
 
 pub fn cvttps2pi(state: &mut State, op: &Operands) {
+	state.print_("cvttps2pi", &op);
 	let operand_size = op.size();
 	let (first_operand, second_operand) = op.operands();
 	let value = state.get_xmm(&first_operand, operand_size);
