@@ -63,7 +63,7 @@ pub fn dispatch(state: &mut State, (opcode, operand, _): &(Opcode, Operands, usi
         Opcode::Lgdt => lgdt(state, operand),
         Opcode::Mov => mov(state, operand),
         Opcode::Movd => movd(state, operand),
-        Opcode::Movps => movps(state, operand),
+        Opcode::Movss => movss(state, operand),
         Opcode::Movs => movs(state, operand),
         Opcode::Movsx => movsx(state, operand),
         Opcode::Movzx => movzx(state, operand),

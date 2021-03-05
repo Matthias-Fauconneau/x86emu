@@ -1,5 +1,87 @@
 use crate::{memory::Memory, instruction::{Operand, Register, Flags, OperandSize}};
 
+pub enum Value {
+	I64(i64),
+	I32(i32),
+	XMM(u128),
+	U8(u8),
+}
+use Value::*;
+
+impl From<f32> for Value {
+	fn from(value: f32) -> Value { XMM(value.to_bits() as u128) }
+}
+
+impl From<Value> for u128 {
+	fn from(value: Value) -> u128 { match value {
+		Value::I64(value) => value as u64 as u128, // /!\ zero extension
+		Value::I32(value) => value as u64 as u128, // /!\ zero extension
+		Value::XMM(value) => value,
+		_ => unreachable!(),
+	}}
+}
+
+impl From<Value> for i64 {
+	fn from(value: Value) -> i64 { match value {
+		Value::I64(value) => value as i64,
+		Value::I32(value) => value as i64, // /!\ sign extend
+		Value::XMM(value) => value as i64, // /!\ truncate
+		_ => unreachable!(),
+	}}
+}
+
+impl From<Value> for i32 {
+	fn from(value: Value) -> i32 { match value {
+		//Value::I64(value) => value,
+		Value::I32(value) => value,
+		Value::XMM(value) => value as i32, // /!\ truncate
+		_ => unreachable!("{:?}", value),
+	}}
+}
+
+impl From<Value> for f32 {
+	fn from(value: Value) -> f32 { match value {
+		Value::XMM(value) => f32::from_bits(value as u32),
+		_ => unreachable!(),
+	}}
+}
+
+impl From<Value> for u16 {
+	fn from(value: Value) -> u16 { match value {
+		//Value::I64(value) => value,
+		//Value::I32(value) => value as i64, // /!\ sign extend
+		//Value::XMM(value) => value as i64, // /!\ truncate
+		_ => unreachable!(),
+	}}
+}
+
+
+impl From<Value> for u8 {
+	fn from(value: Value) -> u8 { match value {
+		//Value::I64(value) => value,
+		//Value::I32(value) => value as i64, // /!\ sign extend
+		//Value::XMM(value) => value as i64, // /!\ truncate
+		_ => unreachable!(),
+	}}
+}
+/*impl From<Value> for u128 {
+	fn from(value: Value) { match value {
+		Value::XMM(value) => value,
+		_ => unreachable!(),
+	}}
+}*/
+
+impl std::fmt::Debug for Value {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		match self {
+			Value::I64(value) => write!(f, "{}", value),
+			Value::I32(value) => write!(f, "{}", value),
+			Value::XMM(value) => write!(f, "{}", f32::from_bits(*value as u32)),
+			Value::U8(value) => write!(f, "{}", value),
+		}
+	}
+}
+
 pub struct State {
 	pub rip: i64,
 	pub rax: i64, pub rbx: i64, pub rcx: i64, pub rdx: i64, pub rsp: i64, pub rbp: i64, pub rsi: i64, pub rdi: i64,
@@ -60,8 +142,8 @@ impl State {
 
     #[track_caller] pub fn get_value(&self, arg: &Operand, operand_size: OperandSize) -> i64 {
         match *arg {
-            Operand::Register { register } => self.get_register_value(register),
-            Operand::Immediate { immediate } => immediate,
+            Operand::Register(register) => self.get_register_value(register),
+            Operand::Immediate(immediate) => immediate,
             Operand::EffectiveAddress { .. } => {
                 let address = self.calculate_effective_address(arg);
                 match operand_size {
@@ -86,8 +168,8 @@ impl State {
 
     pub fn get_xmm(&self, arg: &Operand, operand_size: OperandSize) -> u128 {
         match *arg {
-            Operand::Register { register } => self.get_register_xmm(register),
-            Operand::Immediate { immediate:_ } => unimplemented!(),//immediate,
+            Operand::Register(register) => self.get_register_xmm(register),
+            Operand::Immediate(_) => unimplemented!(),//immediate,
             Operand::EffectiveAddress { .. } => {
                 let address = self.calculate_effective_address(arg);
                 match operand_size {
@@ -114,7 +196,7 @@ impl State {
         }
     }
 
-    #[track_caller] pub fn get_value_or_xmm(&self, arg: &Operand, operand_size: OperandSize) -> u128 {
+    /*#[track_caller] pub fn get_value_or_xmm(&self, arg: &Operand, operand_size: OperandSize) -> u128 {
 			match *arg {
 				Operand::Register { register } => self.get_register_value_or_xmm(register),
 				//Operand::Immediate { immediate } => immediate,
@@ -144,7 +226,7 @@ impl State {
 				}
 				_ => unreachable!(),
 			}
-    }
+    }*/
 
     #[track_caller] pub fn get_register_value(&self, register: Register) -> i64 {
         match register {
@@ -269,7 +351,7 @@ impl State {
 			}
 		}
 
-		#[track_caller] pub fn get_register_value_or_xmm(&self, register: Register) -> u128 {
+		/*#[track_caller] pub fn get_register_value_or_xmm(&self, register: Register) -> u128 {
         match register {
             Register::RAX => self.rax as u128,
             Register::RBX => self.rbx as u128,
@@ -326,7 +408,106 @@ impl State {
 						Register::XMM15 => self.xmm[15],
 						_ => unreachable!("{}", register),
 				}
+		}*/
+
+		#[track_caller] pub fn register(&self, register: Register) -> Value {
+			use Value::*;
+        match register {
+            Register::RAX => I64(self.rax),
+            Register::RBX => I64(self.rbx),
+            Register::RCX => I64(self.rcx),
+            Register::RDX => I64(self.rdx),
+            Register::RSP => I64(self.rsp),
+            Register::RBP => I64(self.rbp),
+            Register::RSI => I64(self.rsi),
+            Register::RDI => I64(self.rdi),
+            Register::R8 => I64(self.r8),
+            Register::R9 => I64(self.r9),
+            Register::R10 => I64(self.r10),
+            Register::R11 => I64(self.r11),
+            Register::R12 => I64(self.r12),
+            Register::R13 => I64(self.r13),
+            Register::R14 => I64(self.r14),
+            Register::R15 => I64(self.r15),
+
+            Register::EAX => I32(self.rax as i32),
+            Register::EBX => I32(self.rbx as i32),
+            Register::ECX => I32(self.rcx as i32),
+            Register::EDX => I32(self.rdx as i32),
+            Register::ESP => I32(self.rsp as i32),
+            Register::EBP => I32(self.rbp as i32),
+            Register::ESI => I32(self.rsi as i32),
+            Register::EDI => I32(self.rdi as i32),
+            Register::R8D => I32(self.r8 as i32),
+            Register::R9D => I32(self.r9 as i32),
+            Register::R10D => I32(self.r10 as i32),
+            Register::R11D => I32(self.r11 as i32),
+            Register::R12D => I32(self.r12 as i32),
+            Register::R13D => I32(self.r13 as i32),
+            Register::R14D => I32(self.r14 as i32),
+            Register::R15D => I32(self.r15 as i32),
+
+						Register::XMM0 => XMM(self.xmm[0]),
+						Register::XMM1 => XMM(self.xmm[1]),
+						Register::XMM2 => XMM(self.xmm[2]),
+						Register::XMM3 => XMM(self.xmm[3]),
+						Register::XMM4 => XMM(self.xmm[4]),
+						Register::XMM5 => XMM(self.xmm[5]),
+						Register::XMM6 => XMM(self.xmm[6]),
+						Register::XMM7 => XMM(self.xmm[7]),
+						Register::XMM8 => XMM(self.xmm[8]),
+						Register::XMM9 => XMM(self.xmm[9]),
+						Register::XMM10 => XMM(self.xmm[10]),
+						Register::XMM11 => XMM(self.xmm[11]),
+						Register::XMM12 => XMM(self.xmm[12]),
+						Register::XMM13 => XMM(self.xmm[13]),
+						Register::XMM14 => XMM(self.xmm[14]),
+						Register::XMM15 => XMM(self.xmm[15]),
+
+						// low 8bit
+						Register::AL => U8(self.rax as u8),
+            Register::CL => U8(self.rcx as u8),
+            Register::DL => U8(self.rdx as u8),
+            Register::BL => U8(self.rbx as u8),
+            Register::SPL => U8(self.rsp as u8),
+            Register::BPL => U8(self.rbp as u8),
+            Register::SIL => U8(self.rsi as u8),
+            Register::DIL => U8(self.rdi as u8),
+            Register::R8B => U8(self.r8 as u8),
+            Register::R9B => U8(self.r9 as u8),
+            Register::R10B => U8(self.r10 as u8),
+            Register::R11B => U8(self.r11 as u8),
+            Register::R12B => U8(self.r12 as u8),
+            Register::R13B => U8(self.r13 as u8),
+            Register::R14B => U8(self.r14 as u8),
+            Register::R15B => U8(self.r15 as u8),
+						_ => unreachable!("{}", register),
+				}
 		}
+
+		#[track_caller] pub fn get(&self, arg: &Operand, operand_size: OperandSize) -> Value {
+			use Value::*;
+			match *arg {
+				Operand::Register(register) => self.register(register),
+				Operand::Immediate(immediate) => I64(immediate),
+				Operand::EffectiveAddress { .. } => {
+						let address = self.calculate_effective_address(arg);
+						match operand_size {
+								/*OperandSize::Bit8 => self.memory.read_byte(address) as i64,
+								OperandSize::Bit16 => {
+										let value: i16 = self.memory.read_unaligned(address);
+										value as i64
+								}*/
+								OperandSize::Bit32 => I32(self.memory.read_unaligned(address)),
+								OperandSize::Bit64 => I64(self.memory.read_unaligned(address)), // fixme
+								OperandSize::Bit128 => XMM(self.memory.read_unaligned(address)),
+								_ => panic!("{:?}", operand_size),
+						}
+				}
+				//_ => unreachable!(),
+			}
+    }
+
 
     #[track_caller] pub fn set_register_value(&mut self, register: Register, value: i64) {
         match register {
@@ -533,9 +714,70 @@ impl State {
 				}
 		}
 
+		pub fn set_register(&mut self, register: Register, value: Value) {
+        match register {
+            // 64 Bit
+            Register::RAX => self.rax = value.into(),
+            Register::RBX => self.rbx = value.into(),
+            Register::RCX => self.rcx = value.into(),
+            Register::RDX => self.rdx = value.into(),
+            Register::RSP => self.rsp = value.into(),
+            Register::RBP => self.rbp = value.into(),
+            Register::RSI => self.rsi = value.into(),
+            Register::RDI => self.rdi = value.into(),
+
+            Register::R8 => self.r8 = value.into(),
+            Register::R9 => self.r9 = value.into(),
+            Register::R10 => self.r10 = value.into(),
+            Register::R11 => self.r11 = value.into(),
+            Register::R12 => self.r12 = value.into(),
+            Register::R13 => self.r13 = value.into(),
+            Register::R14 => self.r14 = value.into(),
+            Register::R15 => self.r15 = value.into(),
+
+            // 32 Bit
+            Register::EAX => self.rax = value.into(),
+            Register::EBX => self.rbx = value.into(),
+            Register::ECX => self.rcx = value.into(),
+            Register::EDX => self.rdx = value.into(),
+            Register::ESP => self.rsp = value.into(),
+            Register::EBP => self.rbp = value.into(),
+            Register::ESI => self.rsi = value.into(),
+            Register::EDI => self.rdi = value.into(),
+
+            Register::R8D => self.r8 = value.into(),
+            Register::R9D => self.r9 = value.into(),
+            Register::R10D => self.r10 = value.into(),
+            Register::R11D => self.r11 = value.into(),
+            Register::R12D => self.r12 = value.into(),
+            Register::R13D => self.r13 = value.into(),
+            Register::R14D => self.r14 = value.into(),
+            Register::R15D => self.r15 = value.into(),
+
+						Register::XMM0 => self.xmm[0] = value.into(),
+						Register::XMM1 => self.xmm[1] = value.into(),
+						Register::XMM2 => self.xmm[2] = value.into(),
+						Register::XMM3 => self.xmm[3] = value.into(),
+						Register::XMM4 => self.xmm[4] = value.into(),
+						Register::XMM5 => self.xmm[5] = value.into(),
+						Register::XMM6 => self.xmm[6] = value.into(),
+						Register::XMM7 => self.xmm[7] = value.into(),
+						Register::XMM8 => self.xmm[8] = value.into(),
+						Register::XMM9 => self.xmm[9] = value.into(),
+						Register::XMM10 => self.xmm[10] = value.into(),
+						Register::XMM11 => self.xmm[11] = value.into(),
+						Register::XMM12 => self.xmm[12] = value.into(),
+						Register::XMM13 => self.xmm[13] = value.into(),
+						Register::XMM14 => self.xmm[14] = value.into(),
+						Register::XMM15 => self.xmm[15] = value.into(),
+
+						_ => panic!("set_register_value_or_xmm: Expected xmm or integer register"),
+				}
+		}
+
 		#[track_caller] pub fn set_value(&mut self, value: i64, arg: &Operand, operand_size: OperandSize) {
         match *arg {
-            Operand::Register { register } => { self.set_register_value(register, value) },
+            Operand::Register(register) => { self.set_register_value(register, value) },
             Operand::EffectiveAddress { .. } => {
                 let address = self.calculate_effective_address(arg);
                 match operand_size {
@@ -550,7 +792,7 @@ impl State {
         }
     }
 
-    pub fn set_xmm(&mut self, value: u128, arg: &Operand, operand_size: OperandSize) {
+    /*pub fn set_xmm(&mut self, value: u128, arg: &Operand, operand_size: OperandSize) {
         match *arg {
             Operand::Register { register } => { self.set_register_xmm(register, value) },
             Operand::EffectiveAddress { .. } => {
@@ -565,9 +807,12 @@ impl State {
             },
             Operand::Immediate { .. } => panic!("Cannot set value on immediate value"),
         }
+    }*/
+    pub fn set_xmm(&mut self, value: Value, arg: &Operand, operand_size: OperandSize) {
+			self.set(value, arg, operand_size);
     }
 
-    pub fn set_value_or_xmm(&mut self, value: u128, arg: &Operand, operand_size: OperandSize) {
+    /*pub fn set_value_or_xmm(&mut self, value: u128, arg: &Operand, operand_size: OperandSize) {
         match *arg {
             Operand::Register { register } => { self.set_register_value_or_xmm(register, value) },
             Operand::EffectiveAddress { .. } => {
@@ -578,6 +823,24 @@ impl State {
                     OperandSize::Bit32 => self.memory.write_unaligned(address, &(value as u32)),
                     OperandSize::Bit64 => self.memory.write_unaligned(address, &(value as u64)),
                     OperandSize::Bit128 => self.memory.write_unaligned(address, &value),
+                }
+            },
+            Operand::Immediate { .. } => panic!("Cannot set value on immediate value"),
+        }
+    }*/
+
+    pub fn set(&mut self, value: Value, arg: &Operand, operand_size: OperandSize) {
+        match *arg {
+            Operand::Register(register) => { self.set_register(register, value) },
+            Operand::EffectiveAddress { .. } => {
+                let address = self.calculate_effective_address(arg);
+                match operand_size {
+                    OperandSize::Bit8   => self.memory.write(address, &(value.into():u8)),
+                    OperandSize::Bit16 => self.memory.write_unaligned(address, &(value.into():u16)),
+                    OperandSize::Bit32 => self.memory.write_unaligned(address, &(value.into():i32)),
+                    OperandSize::Bit64 => self.memory.write_unaligned(address, &(value.into():i64)),
+                    //OperandSize::Bit128 => self.memory.write_unaligned(address, &(value.into():u128)),
+                    _ => panic!("{:?}", operand_size),
                 }
             },
             Operand::Immediate { .. } => panic!("Cannot set value on immediate value"),

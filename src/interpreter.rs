@@ -1,14 +1,28 @@
-use crate::instruction::{self, Operand, Operands, Register, Flags, Repeat, OperandSize, get_register_size};
-use crate::state::State;
+use crate::instruction::{Operand, Operands, Register, Flags, Repeat, OperandSize, get_register_size};
+use crate::state::{State, Value::*};
 
 impl State {
-pub fn print(&self, instruction: &str) { if self.print_instructions { instruction::print(instruction); } }
-pub fn print_no_size(&self, instruction: &str, op: &Operands) { if self.print_instructions { instruction::print_no_size(instruction, op) } }
-pub fn print_(&self, instruction: &str, op: &Operands) {
-    if !self.print_instructions { return; }
-    instruction::print_(instruction, op);
-}
-pub fn print_disp(&self, instruction: &str, op: &Operands) { if self.print_instructions { instruction::print_disp(instruction, op, self.rip) } }
+	pub fn print(&self, instruction: &str) { if self.print_instructions { println!("{:<6}", instruction); } }
+	pub fn print_size(&self, explicit_size: Option<OperandSize>, instruction: &str, operands: &Operands) {
+		if !self.print_instructions { return; }
+		match explicit_size {
+			Some(size) => {
+					match size {
+							OperandSize::Bit8 => print!("{:<6}{} {}\t", instruction, 'b', operands),
+							OperandSize::Bit16 => print!("{:<6}{} {}\t", instruction, 'w', operands),
+							OperandSize::Bit32 => print!("{:<6}{} {}\t", instruction, 'l', operands),
+							OperandSize::Bit64 => print!("{:<6}{} {}\t", instruction, 'q', operands),
+							_ => unreachable!(),
+					}
+			},
+			None => print!("{:<6} {}\t", instruction, operands),
+		}
+		use itertools::Itertools;
+		println!("{:?}", operands.operands.iter().filter_map(|op| op.as_ref().map(|op| self.get(op, explicit_size.unwrap_or(OperandSize::Bit64)))).format(" "));
+	}
+	pub fn print_no_size(&self, instruction: &str, op: &Operands) { self.print_size(None, instruction, op) }
+	pub fn print_(&self, instruction: &str, op: &Operands) { self.print_size(op.explicit_size, instruction, op) }
+	pub fn print_disp(&self, instruction: &str, op: &Operands) { if self.print_instructions { println!("{:<6} {}", instruction, op.fmt(self.rip)); } }
 }
 
 fn jmp_iml(state: &mut State, op: &Operands) {
@@ -140,34 +154,34 @@ pub fn movd(state: &mut State, op: &Operands) {
     let (first_operand, second_operand) = op.operands();
     /*let value = state.get_value(&first_operand, operand_size);
     state.set_xmm(value as u128, second_operand, operand_size);*/
-    let value = state.get_value_or_xmm(&first_operand, operand_size);
-    state.set_value_or_xmm(value, second_operand, operand_size);
+    let value = state.get(&first_operand, operand_size);
+    state.set(value.into(), second_operand, operand_size);
 }
 
-pub fn movps(state: &mut State, op: &Operands) {
-	state.print_("movps", &op);
-	let operand_size = op.size();
+pub fn movss(state: &mut State, op: &Operands) {
+	state.print_("movss", &op);
+	let operand_size = OperandSize::Bit32; //op.size();
 	let (first_operand, second_operand) = op.operands();
 	/*let value = state.get_xmm(&first_operand, operand_size);
 	state.set_xmm(value, second_operand, operand_size);*/
-	let value = state.get_value_or_xmm(&first_operand, operand_size);
-	state.set_value_or_xmm(value, second_operand, operand_size);
+	let value = state.get(&first_operand, operand_size);
+	state.set(value, second_operand, operand_size);
 }
 
 pub fn cvtpi2ps(state: &mut State, op: &Operands) {
 	state.print_("cvtpi2ps", &op);
 	let operand_size = op.size();
 	let (first_operand, second_operand) = op.operands();
-	let value = state.get_value(&first_operand, operand_size);
-	state.set_xmm((value as f32).to_bits() as u128, second_operand, operand_size);
+	let value = state.get(&first_operand, operand_size);
+	state.set_xmm((value.into():i64 as f32).into(), second_operand, operand_size);
 }
 
 pub fn cvttps2pi(state: &mut State, op: &Operands) {
 	state.print_("cvttps2pi", &op);
 	let operand_size = op.size();
 	let (first_operand, second_operand) = op.operands();
-	let value = state.get_xmm(&first_operand, operand_size);
-	state.set_value_or_xmm(f32::from_bits(value as u32) as i64 as u128, second_operand, operand_size);
+	let value = state.get(&first_operand, operand_size);
+	state.set(I64(value.into():f32 as i64), second_operand, operand_size);
 }
 
 pub fn movsx(state: &mut State, op: &Operands) {
@@ -182,7 +196,7 @@ pub fn movzx(state: &mut State, op: &Operands) {
     let (first_operand, second_operand) = op.operands();
     let value = state.get_value(&first_operand, operand_size);
     let first_operand_size = match *first_operand {
-        Operand::Register { register } => { get_register_size(register) },
+        Operand::Register(register) => { get_register_size(register) },
         Operand::EffectiveAddress {..} => {
             match op.explicit_size {
                 Some(explicit_size) => explicit_size,
@@ -249,11 +263,11 @@ pub fn or(state: &mut State, op: &Operands) {
     state.print_("or", &op);
     let operand_size = op.size();
     let (first_operand, second_operand) = op.operands();
-    let value0 = state.get_value_or_xmm(&first_operand, operand_size);
-    let value1 = state.get_value_or_xmm(&second_operand, operand_size);
-    let result = value0 | value1;
+    let value0 = state.get(&first_operand, operand_size);
+    let value1 = state.get(&second_operand, operand_size);
+    let result = value0.into():u128 | value1.into():u128;
     state.compute_flags(result as i64, operand_size);
-    state.set_value_or_xmm(result, &second_operand, operand_size);
+    state.set(XMM(result), &second_operand, operand_size); // fixme
 }
 
 pub fn adc(state: &mut State, op: &Operands) {
@@ -326,13 +340,13 @@ pub fn and(state: &mut State, op: &Operands) {
     state.print_("and", &op);
     let operand_size = op.size();
     let (first_operand, second_operand) = op.operands();
-    let value0 = state.get_value_or_xmm(&first_operand, operand_size);
-    let value1 = state.get_value_or_xmm(&second_operand, operand_size);
-    let result = value0 & value1;
+    let value0 = state.get(&first_operand, operand_size);
+    let value1 = state.get(&second_operand, operand_size);
+    let result = value0.into():u128 & value1.into():u128;
     state.compute_flags(result as i64, operand_size);
     state.set_flag(Flags::Carry, false);
     state.set_flag(Flags::Overflow, false);
-    state.set_value_or_xmm(result, &second_operand, operand_size);
+    state.set(XMM(result), &second_operand, operand_size); // fixme
 }
 
 pub fn sub(state: &mut State, op: &Operands) {
@@ -344,11 +358,11 @@ pub fn xor(state: &mut State, op: &Operands) {
     state.print_("xor", &op);
     let operand_size = op.size();
     let (first_operand, second_operand) = op.operands();
-    let value0 = state.get_value_or_xmm(&first_operand, operand_size);
-    let value1 = state.get_value_or_xmm(&second_operand, operand_size);
-    let result = value0 ^ value1;
+    let value0 = state.get(&first_operand, operand_size);
+    let value1 = state.get(&second_operand, operand_size);
+    let result = value0.into():u128 ^ value1.into():u128;
     state.compute_flags(result as i64, operand_size);
-    state.set_value_or_xmm(result, &second_operand, operand_size);
+    state.set(XMM(result), &second_operand, operand_size); // fixme
 }
 
 pub fn cmp(state: &mut State, op: &Operands) {
@@ -821,12 +835,12 @@ pub fn mul(state: &mut State, op: &Operands) {
     let source1 = state.get_value(&op.op(), operand_size) as u64;
     let result = source0 as u128 * source1 as u128;
     state.compute_flags(result as i64, operand_size);
-    state.set_value(result as i64, &Operand::Register{ register: a }, operand_size);
+    state.set_value(result as i64, &Operand::Register(a), operand_size);
     match operand_size {
         OperandSize::Bit8 => {},
-        OperandSize::Bit16 => state.set_value((result>>16) as i64, &Operand::Register{ register: Register::DX }, operand_size),
-        OperandSize::Bit32 => state.set_value((result>>32) as i64, &Operand::Register{ register: Register::EDX }, operand_size),
-        OperandSize::Bit64 => state.set_value((result>>64) as i64, &Operand::Register{ register: Register::RDX }, operand_size),
+        OperandSize::Bit16 => state.set_value((result>>16) as i64, &Operand::Register(Register::DX), operand_size),
+        OperandSize::Bit32 => state.set_value((result>>32) as i64, &Operand::Register(Register::EDX), operand_size),
+        OperandSize::Bit64 => state.set_value((result>>64) as i64, &Operand::Register( Register::RDX), operand_size),
         _ => unreachable!(),
     };
     // TODO: mul does not set carry/overflow flag
@@ -845,7 +859,7 @@ pub fn imul(state: &mut State, op: &Operands) {
     let result = result.0*/
     // let result = source0 as i128 * source1 as i128;
     state.compute_flags(result, operand_size);
-    match op.operands.2 {
+    match op.operands[2] {
         Some(ref topet) => state.set_value(result, topet, operand_size),
         None => state.set_value(result, &operands.1, operand_size),
     }
@@ -856,40 +870,41 @@ pub fn fadd(state: &mut State, op: &Operands) {
     state.print_("fadd", &op);
     let operand_size = op.size();
     let operands = op.operands();
-    let source0 = state.get_value_or_xmm(&operands.0, operand_size);
-    let source1 = state.get_value_or_xmm(&operands.1, operand_size);
-    let result = f32::from_bits(source0 as u32) + f32::from_bits(source1 as u32);
-		state.set_xmm(result.to_bits() as u128, &operands.1, operand_size);
+    let source0 = state.get(&operands.0, operand_size);
+    let source1 = state.get(&operands.1, operand_size);
+    let result = source0.into():f32 + source1.into():f32;
+		state.set_xmm(result.into(), &operands.1, operand_size);
 }
 
 pub fn fsub(state: &mut State, op: &Operands) {
     state.print_("fsub", &op);
     let operand_size = op.size();
     let operands = op.operands();
-    let source0 = state.get_value_or_xmm(&operands.0, operand_size);
-    let source1 = state.get_value_or_xmm(&operands.1, operand_size);
-    let result = f32::from_bits(source1 as u32) - f32::from_bits(source0 as u32); // checkme
-		state.set_xmm(result.to_bits() as u128, &operands.1, operand_size);
+    let source0 = state.get(&operands.0, operand_size);
+    let source1 = state.get(&operands.1, operand_size);
+    let result = source1.into():f32 + source0.into():f32;
+		state.set(result.into(), &operands.1, operand_size);
 }
 
 pub fn fmul(state: &mut State, op: &Operands) {
     state.print_("fmul", &op);
     let operand_size = op.size();
     let operands = op.operands();
-    let source0 = state.get_value_or_xmm(&operands.0, operand_size);
-    let source1 = state.get_value_or_xmm(&operands.1, operand_size);
-    let result = f32::from_bits(source0 as u32) * f32::from_bits(source1 as u32);
-		state.set_xmm(result.to_bits() as u128, &operands.1, operand_size);
+    let source0 = state.get(&operands.0, operand_size);
+    let source1 = state.get(&operands.1, operand_size);
+    let result = source1.into():f32 * source0.into():f32;
+		state.set(result.into(), &operands.1, operand_size);
 }
 
 pub fn fdiv(state: &mut State, op: &Operands) {
     state.print_("fdiv", &op);
     let operand_size = op.size();
     let operands = op.operands();
-    let source0 = state.get_value_or_xmm(&operands.0, operand_size);
-    let source1 = state.get_value_or_xmm(&operands.1, operand_size);
-    let result = f32::from_bits(source1 as u32) / f32::from_bits(source0 as u32); // checkme
-		state.set_xmm(result.to_bits() as u128, &operands.1, operand_size);
+    let source0 = state.get(&operands.0, operand_size).into():f32;
+    let source1 = state.get(&operands.1, operand_size).into():f32;
+    assert!(source0 != 0.);
+    let result = source1 / source0;
+		state.set(result.into(), &operands.1, operand_size);
 }
 
 pub fn not(state: &mut State, op: &Operands) {
@@ -950,7 +965,7 @@ fn repeat<F:Fn(&mut State)>(state: &mut State, op: &Operands, f: F) {
     match op.repeat {
         Repeat::None => f(state),
         Repeat::Equal => loop {
-            let rcx = state.get_value(&Operand::Register { register: Register::RCX }, OperandSize::Bit64);
+            let rcx = state.get_value(&Operand::Register(Register::RCX), OperandSize::Bit64);
             if rcx == 0 { break; }
             f(state);
             if state.get_flag(Flags::Zero) { break; }
@@ -979,8 +994,8 @@ pub fn movs(state: &mut State, op: &Operands) {
     if let Repeat::Equal | Repeat::NotEqual = op.repeat { state.print("repe"); }
     state.print("movs %ds:(%rsi),%es:(%rdi)");
     repeat(state, op, |state: &mut State| {
-        let from = state.get_value(&Operand::Register { register: Register::RSI }, OperandSize::Bit64) as u64;
-        let to = state.get_value(&Operand::Register { register: Register::RDI }, OperandSize::Bit64) as u64;
+        let from = state.get_value(&Operand::Register(Register::RSI), OperandSize::Bit64) as u64;
+        let to = state.get_value(&Operand::Register(Register::RDI), OperandSize::Bit64) as u64;
         let size = match op.explicit_size.expect("movs need an explicit_size") {
             OperandSize::Bit64 => {state.memory.write(to, &state.memory.read::<u64>(from)); 8},
             OperandSize::Bit32 => {state.memory.write(to, &state.memory.read::<u32>(from)); 4},

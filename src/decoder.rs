@@ -257,17 +257,17 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 			}
 			opcode @ 0x50..=0x57 => {
 					*rip += 1;
-					(Opcode::Push, Operands{ operands: (Some(Operand::Register{ register: get_register(opcode - 0x50, RegisterSize::Bit64,
+					(Opcode::Push, Operands{ operands: [Some(Operand::Register(get_register(opcode - 0x50, RegisterSize::Bit64,
 																																																																													flags.contains(Flags::NEW_64BIT_REGISTER),
-																																																																													flags.contains(Flags::NEW_8BIT_REGISTER)) }),
-																																						None, None), ..Default::default() })
+																																																																													flags.contains(Flags::NEW_8BIT_REGISTER)) )),
+																																						None, None], ..Default::default() })
 			}
 			opcode @ 0x58..=0x5F => {
 					*rip += 1;
-					(Opcode::Pop, Operands{ operands: (Some(Operand::Register{ register: get_register(opcode - 0x58, RegisterSize::Bit64,
+					(Opcode::Pop, Operands{ operands: [Some(Operand::Register(get_register(opcode - 0x58, RegisterSize::Bit64,
 																																																																													flags.contains(Flags::NEW_64BIT_REGISTER),
-																																																																													flags.contains(Flags::NEW_8BIT_REGISTER)) }),
-																																						None, None), ..Default::default() })
+																																																																													flags.contains(Flags::NEW_8BIT_REGISTER)))),
+																																						None, None], ..Default::default() })
 			}
 			0x63 => {
 					let (mut op, ip_offset) = get_operands(&memory, *rip, register_size,
@@ -288,7 +288,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 							*rip += 5;
 							immediate
 					};
-					(Opcode::Push, Operands{ operands: (Some(Operand::Immediate{ immediate }), None, None), ..Default::default() })
+					(Opcode::Push, Operands{ operands: [Some(Operand::Immediate(immediate)), None, None], ..Default::default() })
 			}
 			0x69 => {
 					let (mut op, ip_offset) = get_operands(&memory, *rip, register_size, RegOrOpcode::Register, ImmediateSize::None,
@@ -303,9 +303,8 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 							*rip += 4;
 							immediate
 					};
-					op.operands.2 = op.operands.1;
-					op.operands.1 = op.operands.0;
-					op.operands.0 = Some(Operand::Immediate{ immediate });
+					let [op0, op1, _] = op.operands;
+					op.operands = [Some(Operand::Immediate(immediate)), op0, op1];
 					(Opcode::Imul, op)
 			}
 			0x6A => (Opcode::Push, read_immediate_8bit(memory, rip)),
@@ -316,9 +315,8 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 																															flags | Flags::REVERSED_REGISTER_DIRECTION);
 					*rip += ip_offset;
 					let immediate = memory.get_i8(*rip, 0) as i64;
-					op.operands.2 = op.operands.1;
-					op.operands.1 = op.operands.0;
-					op.operands.0 = Some(Operand::Immediate{ immediate });
+					let [op0, op1, _] = op.operands;
+					op.operands = [Some(Operand::Immediate(immediate)), op0, op1];
 					*rip += 1;
 					(Opcode::Imul, op)
 			}
@@ -447,7 +445,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 																															ImmediateSize::None,
 																															flags |
 																															Flags::REVERSED_REGISTER_DIRECTION);
-					op.operands.1 = None;
+					op.operands[1] = None;
 					*rip += ip_offset;
 					(Opcode::Pop, op)
 			}
@@ -459,7 +457,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 					let register1 = get_register(0, register_size, flags.contains(Flags::NEW_64BIT_REGISTER), flags.contains(Flags::NEW_8BIT_REGISTER));
 					let register2 = get_register(opcode - 0x90, register_size, flags.contains(Flags::NEW_64BIT_REGISTER), flags.contains(Flags::NEW_8BIT_REGISTER));
 					*rip += 1;
-					(Opcode::Xchg, Operands{ operands: (Some(Operand::Register{ register: register1 }), Some(Operand::Register{ register: register2 }), None), ..Default::default() })
+					(Opcode::Xchg, Operands{ operands: [Some(Operand::Register(register1)), Some(Operand::Register(register2)), None], ..Default::default() })
 			}
 			0x98 => {
 					let (register1, register2) = if flags.contains(Flags::OPERAND_16_BIT) {
@@ -470,7 +468,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 							(Register::AX, Register::EAX)
 					};
 					*rip += 1;
-					(Opcode::Mov, Operands{ operands: (Some(Operand::Register{register: register1}), Some(Operand::Register{register: register2}), None), ..Default::default() })
+					(Opcode::Mov, Operands{ operands: [Some(Operand::Register(register1)), Some(Operand::Register(register2)), None], ..Default::default() })
 			}
 			0x99 => {
 					let (register1, register2) = if flags.contains(Flags::OPERAND_16_BIT) {
@@ -482,7 +480,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 					};
 
 					*rip += 1;
-					(Opcode::Mov, Operands{ operands: (Some(Operand::Register{register: register1}), Some(Operand::Register{register: register2}), None), ..Default::default() })
+					(Opcode::Mov, Operands{ operands: [Some(Operand::Register(register1)), Some(Operand::Register(register2)), None], ..Default::default() })
 			}
 			0x9C => {
 					*rip += 1;
@@ -532,18 +530,18 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 			}
 			0xAE => {
 					*rip += 1;
-					(Opcode::Scas, Operands{ operands: (Some(Operand::EffectiveAddress{ base: Some(Register::RDI), index: None, scale: None, displacement: 0 }),
-																																						Some(Operand::Register{ register: Register::AL }),
-																																						None), repeat, ..Default::default() })
+					(Opcode::Scas, Operands{ operands: [Some(Operand::EffectiveAddress{ base: Some(Register::RDI), index: None, scale: None, displacement: 0 }),
+																																						Some(Operand::Register(Register::AL)),
+																																						None], repeat, ..Default::default() })
 			}
 			opcode @ 0xB0..=0xB7 => {
 					let immediate = memory.get_u8(*rip, 1) as i64;
 					*rip += 2;
-					(Opcode::Mov, Operands{ operands: (Some(Operand::Immediate{ immediate: immediate as i64 }),
-																																					Some(Operand::Register{ register: get_register(opcode - 0xB0, RegisterSize::Bit8,
+					(Opcode::Mov, Operands{ operands: [Some(Operand::Immediate(immediate as i64)),
+																																					Some(Operand::Register(get_register(opcode - 0xB0, RegisterSize::Bit8,
 																																																																													flags.contains(Flags::NEW_64BIT_REGISTER),
-																																																																													flags.contains(Flags::NEW_8BIT_REGISTER)) }),
-																																					None), ..Default::default() })
+																																																																													flags.contains(Flags::NEW_8BIT_REGISTER)))),
+																																					None], ..Default::default() })
 			}
 			opcode @ 0xB8..=0xBF => {
 					let (immediate, ip_offset) = if flags.contains(Flags::OPERAND_64_BIT) {
@@ -554,11 +552,11 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 							(memory.get_i32(*rip, 1) as i64, 5)
 					};
 					*rip += ip_offset;
-					(Opcode::Mov, Operands{ operands: (Some(Operand::Immediate{ immediate }),
-																																					Some(Operand::Register{ register: get_register(opcode - 0xB8, register_size,
+					(Opcode::Mov, Operands{ operands: [Some(Operand::Immediate(immediate)),
+																																					Some(Operand::Register(get_register(opcode - 0xB8, register_size,
 																																																																													flags.contains(Flags::NEW_64BIT_REGISTER),
-																																																																													flags.contains(Flags::NEW_8BIT_REGISTER)) }),
-																																					None), ..Default::default() })
+																																																																													flags.contains(Flags::NEW_8BIT_REGISTER)))),
+																																					None], ..Default::default() })
 			}
 			0xC6 => {
 					let (op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit8,
@@ -607,10 +605,8 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 																													RegOrOpcode::Opcode,
 																													ImmediateSize::None,
 																													flags);
-					op.operands.1 = Some(op.operands.0.unwrap());
-					op.operands.0 = Some(Operand::Immediate{
-							immediate: 1,
-					});
+					let [op0, _, _] = op.operands;
+					op.operands = [Some(Operand::Immediate(1)), op0, None];
 					*rip += ip_offset;
 					(Opcode::ShiftRotate, op)
 			}
@@ -619,10 +615,8 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 																															RegOrOpcode::Opcode,
 																															ImmediateSize::None,
 																															flags);
-					op.operands.1 = Some(op.operands.0.unwrap());
-					op.operands.0 = Some(Operand::Register{
-							register: Register::CL
-					});
+					let [op0, _, _] = op.operands;
+					op.operands = [Some(Operand::Register(Register::CL)), op0, None];
 					*rip += ip_offset;
 					(Opcode::ShiftRotate, op)
 			}
@@ -632,10 +626,8 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 																													ImmediateSize::None,
 																													flags);
 					let size = op.size();
-					op.operands.1 = Some(op.operands.0.unwrap());
-					op.operands.0 = Some(Operand::Register{
-							register: Register::CL
-					});
+					let [op0, _, _] = op.operands;
+					op.operands = [Some(Operand::Register(Register::CL)), op0, None];
 					op.explicit_size = Some(size);
 					*rip += ip_offset;
 					(Opcode::ShiftRotate, op)
@@ -644,12 +636,12 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 			0xE8 => {
 					let immediate = memory.get_i32(*rip, 1);
 					*rip += 5;
-					(Opcode::Call, Operands{ operands: (Some(Operand::Immediate{ immediate: immediate as i64 }), None, None), ..Default::default() } )
+					(Opcode::Call, Operands{ operands: [Some(Operand::Immediate(immediate as i64)), None, None], ..Default::default() } )
 			}
 			0xE9 => {
 					let immediate = memory.get_i32(*rip, 1);
 					*rip += 5;
-					(Opcode::Jmp, Operands{ operands: (Some(Operand::Immediate{ immediate: immediate as i64 }), None, None), ..Default::default() } )
+					(Opcode::Jmp, Operands{ operands: [Some(Operand::Immediate(immediate as i64)), None, None], ..Default::default() } )
 			}
 			0xEE => {
 					*rip += 1;
@@ -708,7 +700,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 																																			RegOrOpcode::Opcode,
 																																			ImmediateSize::None,
 																																			flags);
-									op.operands.1 = None;
+									op.operands[1] = None;
 									op.opcode = Some(opcode);
 									(op, ip_offset)
 							},
@@ -751,7 +743,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 					let register_size = if opcode == 2 || opcode == 4 {RegisterSize::Bit64} else {register_size}; // FF /2, 4 (Call/jmp near absolute indirect) implies REX.W
 					let (mut op, ip_offset) =
 							get_operands(&memory, *rip, register_size, RegOrOpcode::Register, ImmediateSize::None, flags | Flags::REVERSED_REGISTER_DIRECTION);
-					op.operands.1 = None;
+					op.operands[1] = None;
 					op.opcode = Some(opcode);
 					*rip += ip_offset;
 					(Opcode::RegisterOperation, op)
@@ -769,8 +761,8 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 																																							RegOrOpcode::Opcode,
 																																							ImmediateSize::Bit32,
 																																							flags | Flags::REVERSED_REGISTER_DIRECTION);
-													op.operands.0 = Some(op.operands.1.unwrap());
-													op.operands.1 = None;
+													let [_, op1, _] = op.operands;
+													op.operands = [op1, None, None];
 													*rip += ip_offset - 4;
 													if opcode == 2 {
 															(Opcode::Lgdt, op)
@@ -791,21 +783,21 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 							}
 							0x10|0x28 => {
 								//assert!(flags==Flags::empty() || flags==Flags::NEW_8BIT_REGISTER, "{:?}", flags);
-								let (op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit128,
+								let (op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit32, // FIXME
 																																RegOrOpcode::Register,
 																																ImmediateSize::None,
 																																flags | Flags::OP1_XMM | Flags::OP2_XMM | Flags::REVERSED_REGISTER_DIRECTION); // Checkme
 								*rip += ip_offset;
-								(Opcode::Movps, op)
+								(Opcode::Movss, op)
 							}
 							0x11|0x29 => {
 								assert!(flags==Flags::empty() || flags==Flags::NEW_8BIT_REGISTER);
-								let (op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit128,
+								let (op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit32, // FIXME
 																																RegOrOpcode::Register,
 																																ImmediateSize::None,
 																																flags | Flags::OP1_XMM | Flags::OP2_XMM); // Checkme
 								*rip += ip_offset;
-								(Opcode::Movps, op)
+								(Opcode::Movss, op)
 							}
 							0x1F => {
 									// NOP with hint
@@ -816,13 +808,13 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 									*rip += ip_offset;
 									(Opcode::Nop, Operands::default())
 							}
-							0x20 => {
+							/*0x20 => {
 									let (mut op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit64,
 																																	RegOrOpcode::Register,
 																																	ImmediateSize::None,
 																																	flags);
-									let register = match op.operands.0.unwrap() {
-											Operand::Register { register } => {
+									let register = match op.operands[0].unwrap() {
+											Operand::Register(register) => {
 													match register {
 															Register::R8 => Register::CR8,
 															Register::RAX => Register::CR0,
@@ -834,7 +826,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 											},
 											_ => panic!("Invalid operand for mov r64, CRn instruciton"),
 									};
-									op.operands.0 = Some(Operand::Register{ register });
+									op.operands[0] = Some(Operand::Register(register));
 									*rip += ip_offset;
 									(Opcode::Mov, op)
 							},
@@ -843,8 +835,8 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 																																	RegOrOpcode::Register,
 																																	ImmediateSize::None,
 																																	flags | Flags::REVERSED_REGISTER_DIRECTION);
-									let register = match op.operands.1.unwrap() {
-											Operand::Register { register } => {
+									let register = match op.operands[1].unwrap() {
+											Operand::Register(register) => {
 													match register {
 															Register::R8 => Register::CR8,
 															Register::RAX => Register::CR0,
@@ -856,10 +848,10 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 											},
 											_ => panic!("Invalid operand for mov r64, CRn instruciton"),
 									};
-									op.operands.1 = Some(Operand::Register { register });
+									op.operands[1] = Some(Operand::Register(register));
 									*rip += ip_offset;
 									(Opcode::Mov, op)
-							},
+							},*/
 							0x2A => {
 								let (op, ip_offset) = get_operands(&memory, *rip, register_size,
 																																RegOrOpcode::Register,
@@ -1092,7 +1084,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 									// TODO: could also be 16bit value
 									let immediate = memory.get_i32(*rip, 1) as i64;
 									*rip += 5;
-									(jcc[(opcode-0x80) as usize], Operands{ operands: (Some(Operand::Immediate{ immediate }), None, None), ..Default::default() })
+									(jcc[(opcode-0x80) as usize], Operands{ operands: [Some(Operand::Immediate(immediate)), None, None], ..Default::default() })
 							},
 							opcode @ 0x90..=0x9F => {
 									let (mut op, ip_offset) = get_operands(&memory, *rip, RegisterSize::Bit8,
@@ -1100,8 +1092,8 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 																																	ImmediateSize::None,
 																																	flags);
 									// TODO: change this hack to Something sane
-									op.operands.0 = Some(op.operands.1.unwrap());
-									op.operands.1 = None;
+									let [_, op1, _] = op.operands;
+									op.operands = [op1, None, None];
 									*rip += ip_offset;
 									(scc[(opcode-0x90) as usize], op)
 							},
@@ -1213,7 +1205,7 @@ pub fn decode(rip : &mut i64, memory : &Memory) -> (Opcode, Operands) {
 fn read_immediate_8bit(memory: &Memory, rip: &mut i64) -> Operands {
 	let immediate = memory.get_i8(*rip, 1) as i64;
 	*rip += 2;
-	Operands{ operands: (Some(Operand::Immediate{ immediate }), None, None), ..Default::default()}
+	Operands{ operands: [Some(Operand::Immediate(immediate)), None, None], ..Default::default()}
 }
 
 fn get_operands(memory : &Memory, rip: i64, register_size: RegisterSize, reg_or_opcode: RegOrOpcode, immediate_size: ImmediateSize, mut flags: Flags) -> (Operands, i64) {
@@ -1295,8 +1287,8 @@ fn get_operands(memory : &Memory, rip: i64, register_size: RegisterSize, reg_or_
 																		flags.contains(Flags::NEW_8BIT_REGISTER))
 									};
 
-									(Operands{ operands: (Some(Operand::Immediate{ immediate: immediate as i64 }),
-																													Some(effective_address(sib, register, displacement, flags)), None),
+									(Operands{ operands: [Some(Operand::Immediate(immediate as i64)),
+																													Some(effective_address(sib, register, displacement, flags)), None],
 																			opcode: Some(register_or_opcode), explicit_size: Some(operand_size), ..Default::default() },
 										ip_offset + 1)
 							}
@@ -1332,7 +1324,7 @@ fn get_operands(memory : &Memory, rip: i64, register_size: RegisterSize, reg_or_
 																		flags.contains(Flags::NEW_8BIT_REGISTER))
 									};
 
-									(Operands{ operands: (Some(Operand::Immediate{ immediate }), Some(effective_address(sib, register, displacement, flags)), None),
+									(Operands{ operands: [Some(Operand::Immediate(immediate)), Some(effective_address(sib, register, displacement, flags)), None],
 																			opcode: Some(register_or_opcode), explicit_size: Some(operand_size), ..Default::default() },
 										ip_offset)
 							}
@@ -1362,15 +1354,15 @@ fn get_operands(memory : &Memory, rip: i64, register_size: RegisterSize, reg_or_
 																											flags.contains(Flags::OP2_XMM));
 
 													if flags.contains(Flags::REVERSED_REGISTER_DIRECTION) {
-															Operands{ operands: (Some(effective_address(sib, register1, displacement, flags)), Some(Operand::Register{ register: register2 }), None),
+															Operands{ operands: [Some(effective_address(sib, register1, displacement, flags)), Some(Operand::Register(register2)), None],
 																									..Default::default()}
 													} else {
-															Operands{ operands: (Some(Operand::Register{ register: register2 }),
-																																			Some(effective_address(sib, register1, displacement, flags)), None), ..Default::default() }
+															Operands{ operands: [Some(Operand::Register(register2)),
+																																			Some(effective_address(sib, register1, displacement, flags)), None], ..Default::default() }
 													}
 											},
 											RegOrOpcode::Opcode => {
-													Operands{ operands: (Some(effective_address(sib, register1, displacement, flags)), None, None),
+													Operands{ operands: [Some(effective_address(sib, register1, displacement, flags)), None, None],
 																						opcode: Some(register_or_opcode), explicit_size: Some(OperandSize::Bit64), ..Default::default() }
 											}
 									}, ip_offset)
@@ -1388,19 +1380,19 @@ fn get_operands(memory : &Memory, rip: i64, register_size: RegisterSize, reg_or_
 					match reg_or_opcode {
 							RegOrOpcode::Register => {
 									(if flags.contains(Flags::REVERSED_REGISTER_DIRECTION) {
-											Operands{ operands: (Some(Operand::Register{ register }),
-																															Some(Operand::Register{ register: get_register_or_xmm(value2, register_size,
+											Operands{ operands: [Some(Operand::Register(register)),
+																															Some(Operand::Register(get_register_or_xmm(value2, register_size,
 																																																															flags.contains(Flags::MOD_R_M_EXTENSION),
 																																																															flags.contains(Flags::NEW_8BIT_REGISTER),
-																																																															flags.contains(Flags::OP2_XMM)) }),
-																															None), ..Default::default()}
+																																																															flags.contains(Flags::OP2_XMM)) )),
+																															None], ..Default::default()}
 										} else {
-											Operands{ operands: (Some(Operand::Register{ register: get_register_or_xmm(value2, register_size,
+											Operands{ operands: [Some(Operand::Register(get_register_or_xmm(value2, register_size,
 																																																															flags.contains(Flags::MOD_R_M_EXTENSION),
 																																																															flags.contains(Flags::NEW_8BIT_REGISTER),
-																																																															flags.contains(Flags::OP2_XMM)) }),
-																															Some(Operand::Register{ register }),
-																															None), ..Default::default()}
+																																																															flags.contains(Flags::OP2_XMM)))),
+																															Some(Operand::Register(register)),
+																															None], ..Default::default()}
 										},
 										2)
 							}
@@ -1408,15 +1400,15 @@ fn get_operands(memory : &Memory, rip: i64, register_size: RegisterSize, reg_or_
 									match immediate_size {
 											ImmediateSize::Bit8 => {
 													let immediate = memory.get_i8(rip, 2);
-													(Operands{ operands: (Some(Operand::Immediate{ immediate: immediate as i64 }), Some(Operand::Register{ register }), None),
+													(Operands{ operands: [Some(Operand::Immediate(immediate as i64)), Some(Operand::Register(register)), None],
 																							opcode: Some(value2), ..Default::default()}, 3)
 											}
 											ImmediateSize::Bit32 => {
 													let immediate = memory.get_i32(rip, 2);
-													(Operands{ operands: (Some(Operand::Immediate{ immediate: immediate as i64 }), Some(Operand::Register{ register }), None),
+													(Operands{ operands: [Some(Operand::Immediate(immediate as i64)), Some(Operand::Register(register)), None],
 																							opcode: Some(value2), ..Default::default()}, 6)
 											}
-											ImmediateSize::None => { (Operands{ operands: (Some(Operand::Register{ register }), None, None), opcode: Some(value2), ..Default::default()}, 2) }
+											ImmediateSize::None => { (Operands{ operands: [Some(Operand::Register(register)), None, None], opcode: Some(value2), ..Default::default()}, 2) }
 									}
 							}
 					}
@@ -1507,7 +1499,7 @@ fn decode_reg_reg(memory: &Memory, rip: &mut i64, register_size: RegisterSize, f
 
 fn decode_al_immediate(memory: &Memory, rip: &mut i64) -> Operands {
 	let immediate = memory.get_i8(*rip, 1);
-	let op = Operands{ operands: (Some(Operand::Immediate{ immediate: immediate as i64 }), Some(Operand::Register { register: Register::AL }), None), ..Default::default() };
+	let op = Operands{ operands: [Some(Operand::Immediate(immediate as i64)), Some(Operand::Register(Register::AL)), None], ..Default::default() };
 	*rip += 2;
 	op
 }
@@ -1523,13 +1515,13 @@ fn decode_ax_immediate(memory: &Memory, rip: &mut i64, register_size: RegisterSi
 			register_size, flags.contains(Flags::NEW_64BIT_REGISTER),
 			false);
 
-	let op = Operands{ operands: (Some(Operand::Immediate{ immediate }), Some(Operand::Register { register }), None), ..Default::default()};
+	let op = Operands{ operands: [Some(Operand::Immediate(immediate)), Some(Operand::Register(register)), None], ..Default::default()};
 	*rip += ip_offset;
 	op
 }
 
 fn override_operand_size(memory : &Memory, rip: i64, op: &mut Operands, size: OperandSize, flags: &Flags) {
-	match op.operands.0 {
+	match op.operands[0] {
 		Some(Operand::Register{..}) => {
 			let register_size = match size {
 					OperandSize::Bit8 => RegisterSize::Bit8,
@@ -1543,7 +1535,7 @@ fn override_operand_size(memory : &Memory, rip: i64, op: &mut Operands, size: Op
 			let register = get_register(register, register_size,
 																	flags.contains(Flags::NEW_64BIT_REGISTER),
 																	flags.contains(Flags::NEW_8BIT_REGISTER));
-			op.operands.0 = Some(Operand::Register{ register })
+			op.operands[0] = Some(Operand::Register(register))
 		},
 		Some(Operand::EffectiveAddress{..}) => { op.explicit_size = Some(size); },
 			_ => panic!("Invalid instruction")

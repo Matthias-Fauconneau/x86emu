@@ -1,4 +1,4 @@
-#![feature(destructuring_assignment)]
+#![feature(destructuring_assignment, type_ascription)]
 mod memory; pub use memory::PAGE_SIZE;
 mod state; pub use state::State;
 mod instruction; use instruction::{Opcode, Operands};
@@ -78,7 +78,7 @@ pub fn stack_push<T>(state: &mut State, value: &T) {
 }
 
 pub fn call(state: &mut State, args: &[i64], fargs: &[f32]) {
-	(state.rcx, state.rdx/*, state.r8*//*, state.r9*/) = (args[0], args[1]/*, args[2]*/); //, args.get(3).unwrap_or_default()];
+	(state.rdi, state.rsi/*, state.r8*//*, state.r9*/) = (args[0], args[1]/*, args[2]*/); //, args.get(3).unwrap_or_default()];
 	(state.xmm[0], ) = (fargs[0].to_bits() as u128, );
 	stack_push(state, &!0u64);
 }

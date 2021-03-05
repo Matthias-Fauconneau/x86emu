@@ -72,15 +72,14 @@ pub fn get_register_size(reg: Register) -> OperandSize {
 
 impl fmt::Display for Register {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let rep = format!("{:?}", self).to_lowercase();
-        write!(f, "%{}", rep)
+        write!(f, "%{}", format!("{:?}", self).to_lowercase())
     }
 }
 
 #[derive(Debug)]
 pub enum Operand {
-    Immediate { immediate: i64 },
-    Register { register: Register },
+    Immediate(i64),
+    Register(Register),
     EffectiveAddress {
         base: Option<Register>,
         index: Option<Register>,
@@ -92,8 +91,8 @@ pub enum Operand {
 impl Operand {
     pub fn format(&self, size: OperandSize) -> String {
         match *self {
-            Operand::Register {..} | Operand::EffectiveAddress {..} => format!("{}", self),
-            Operand::Immediate { immediate } => {
+            Operand::Register(_) | Operand::EffectiveAddress {..} => format!("{}", self),
+            Operand::Immediate(immediate) => {
                 format!("$0x{:x}", match size {
                     OperandSize::Bit8 => immediate as u8 as u64,
                     OperandSize::Bit16 => immediate as u16 as u64,
@@ -109,8 +108,8 @@ impl Operand {
 impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Operand::Register { ref register } => write!(f, "{}", register),
-            Operand::Immediate { immediate } => write!(f, "$0x{:x}", immediate),
+            Operand::Register(ref register) => write!(f, "{}", register),
+            Operand::Immediate(immediate) => write!(f, "$0x{:x}", immediate),
             Operand::EffectiveAddress { displacement, .. } => match displacement.cmp(&0) {
                 std::cmp::Ordering::Less => write!(f, "-{:#x}{}", displacement.abs(), format_effective_address(self)),
                 std::cmp::Ordering::Greater => write!(f, "{:#x}{}", displacement, format_effective_address(self)),
@@ -122,22 +121,22 @@ impl fmt::Display for Operand {
 
 #[derive(Default,Debug)]
 pub struct Operands {
-    pub operands: (Option<Operand>, Option<Operand>, Option<Operand>),
-    pub opcode: Option<u8>,
+    pub operands: [Option<Operand>; 3],
+    pub opcode: Option<u8>, // modifier (actual instruction is (Opcode, Operands))
     pub explicit_size: Option<OperandSize>,
     pub repeat: Repeat,
 }
 
 impl Operands {
-    pub fn op(&self) -> &Operand { assert!(self.operands.1.is_none()); self.operands.0.as_ref().unwrap() }
-    pub fn operands(&self) -> (&Operand, &Operand) { (self.operands.0.as_ref().unwrap(), self.operands.1.as_ref().unwrap()) }
+    pub fn op(&self) -> &Operand { assert!(self.operands[1].is_none()); self.operands[0].as_ref().unwrap() }
+    pub fn operands(&self) -> (&Operand, &Operand) { (self.operands[0].as_ref().unwrap(), self.operands[1].as_ref().unwrap()) }
 
     pub fn size(&self) -> OperandSize {
         if let Some(explicit_size) = self.explicit_size { return explicit_size; }
-        match *self.operands.0.as_ref().unwrap() {
-            Operand::Register { register } => { get_register_size(register) }
-            Operand::Immediate { .. } | Operand::EffectiveAddress { .. } => {
-                if let Some(Operand::Register{ register }) = self.operands.1 { return get_register_size(register); }
+        match *self.operands[0].as_ref().unwrap() {
+            Operand::Register(register) => { get_register_size(register) }
+            Operand::Immediate(_) | Operand::EffectiveAddress { .. } => {
+                if let Some(Operand::Register(register)) = self.operands[1] { return get_register_size(register); }
                 OperandSize::Bit64
             }
         }
@@ -145,13 +144,13 @@ impl Operands {
 }
 
 impl Operands {
-    fn fmt(&self, rip : i64) -> String {
+    pub fn fmt(&self, rip : i64) -> String {
         let mut f = String::new();
         use std::fmt::Write;
-        if let Some(op0) = &self.operands.0 {
+        if let Some(op0) = &self.operands[0] {
             write!(f, "{}", op0.format(self.size())).unwrap();
-            if let Some(op1) = &self.operands.1 { write!(f, ",{}", op1.format(self.size())).unwrap(); }
-            if rip != 0 { if let Operand::Immediate{ immediate } = op0 { write!(f, " {:x}", rip+immediate).unwrap(); } }
+            if let Some(op1) = &self.operands[1] { write!(f, ",{}", op1.format(self.size())).unwrap(); }
+            if rip != 0 { if let Operand::Immediate(immediate) = op0 { write!(f, " {:x}", rip+immediate).unwrap(); } }
         }
         f
     }
@@ -253,7 +252,7 @@ pub enum Opcode {
     Mov,
     Movs,
     Movd,
-    Movps,
+    Movss,
     Movsx,
     Movzx,
     Nop,
@@ -296,24 +295,4 @@ pub enum Opcode {
     Setle,
     Setg,
     Ud2,
-}
-
-pub fn print(instruction: &str) { println!("{:<6}", instruction); }
-pub fn print_no_size(instruction: &str, op: &Operands) { println!("{:<6} {}", instruction, op); }
-pub fn print_(instruction: &str, op: &Operands) {
-    match op.explicit_size {
-        Some(size) => {
-            match size {
-                OperandSize::Bit8 => println!("{:<6} {}", instruction.to_owned() + "b", op),
-                OperandSize::Bit16 => println!("{:<6} {}", instruction.to_owned() + "w", op),
-                OperandSize::Bit32 => println!("{:<6} {}", instruction.to_owned() + "l", op),
-                OperandSize::Bit64 => println!("{:<6} {}", instruction.to_owned() + "q", op),
-                _ => unreachable!(),
-            }
-        },
-        None => println!("{:<6} {}", instruction, op),
-    }
-}
-pub fn print_disp(instruction: &str, op: &Operands, rip: i64) {
-    println!("{:<6} {}", instruction, op.fmt(rip));
 }
